@@ -19,8 +19,7 @@ async def pet_command(client: Client, message: Message):
 
     if not source_image_bytes:
         try:
-
-            async for photo in client.get_user_profile_photos(message.from_user.id, limit=1):
+            async for photo in client.get_chat_photos(message.from_user.id, limit=1):
                 source_image_bytes = await client.download_media(photo.file_id, in_memory=True)
                 break 
             else:
