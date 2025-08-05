@@ -12,6 +12,7 @@ async def extract_youtube_url(text):
         r'https?://youtu\.be/[\w-]+',
         r'https?://(?:www\.)?youtube\.com/shorts/[\w-]+',
         r'https?://m\.youtube\.com/watch\?v=[\w-]+',
+        r'https?://music\.youtube\.com/watch\?v=[\w-]+',
     ]
     
     for pattern in youtube_patterns:
@@ -54,19 +55,22 @@ async def download_youtube_video(url, download_audio=False):
 async def yt_command(client: Client, message: Message):
     url = None
     download_audio = False
-    
+
     if len(message.command) > 1 and message.command[1] == 'audio':
         download_audio = True
-    
+
     if message.reply_to_message:
         if message.reply_to_message.text:
             url = await extract_youtube_url(message.reply_to_message.text)
         elif message.reply_to_message.caption:
             url = await extract_youtube_url(message.reply_to_message.caption)
-    
+
     if not url and len(message.command) > 1:
         url = await extract_youtube_url(message.text)
-    
+
+    if url and "music.youtube.com" in url:
+        download_audio = True
+
     if not url:
         await message.reply_text("❌ YouTube посилання не знайдено.\nВикористання: `.yt <посилання>` або `.yt audio <посилання>` для аудіо")
         return
