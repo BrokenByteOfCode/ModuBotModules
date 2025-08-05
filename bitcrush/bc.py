@@ -96,11 +96,13 @@ async def process_audio_for_bitcrush(client, message, bit_depth=8, srr=4):
         
         caption_text = f"🎛 **Bitcrushed Audio**\n{bit_depth}-bit • {srr}x reduction"
         
+        processed_audio_buffer.name = "bitcrushed.mp3"
+        
         await message.reply_audio(
-            processed_audio_buffer, 
-            caption=caption_text,
-            file_name="bitcrushed.mp3"
+            audio=processed_audio_buffer,
+            caption=caption_text
         )
+        
         await status_msg.delete()
 
     except Exception as e:
