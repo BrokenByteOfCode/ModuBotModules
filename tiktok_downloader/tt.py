@@ -5,6 +5,25 @@ import yt_dlp
 import os
 import re
 import tempfile
+import asyncio
+from pyrogram.errors import FloodWait
+
+async def send_media_with_retry(client, send_func, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return await send_func()
+        except FloodWait as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(e.value)
+                continue
+            else:
+                raise e
+        except Exception as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2)
+                continue
+            else:
+                raise e
 
 async def extract_tiktok_url(text):
     tiktok_patterns = [
@@ -21,7 +40,7 @@ async def extract_tiktok_url(text):
 
 async def download_tiktok_video(url):
     ydl_opts = {
-        'format': 'best[height<=720]',
+        'format': 'best[height<=1080]/best[height<=720]/best[height<=480]/best',
         'outtmpl': os.path.join(tempfile.gettempdir(), '%(title)s.%(ext)s'),
         'quiet': True,
         'no_warnings': True,
@@ -33,7 +52,11 @@ async def download_tiktok_video(url):
             filename = ydl.prepare_filename(info)
             return filename, info.get('title', 'TikTok Video')
     except Exception as e:
-        raise Exception(f"Помилка завантаження: {str(e)}")
+        error_msg = str(e).lower()
+        if 'cookies' in error_msg or 'login' in error_msg or 'sign in' in error_msg:
+            raise Exception("Meh. Need cookies.")
+        else:
+            raise Exception(f"Помилка завантаження: {str(e)}")
 
 async def tt_command(client: Client, message: Message):
     url = None
@@ -58,12 +81,12 @@ async def tt_command(client: Client, message: Message):
         
         await status_msg.edit_text("📤 Відправляю відео...")
         
-        await client.send_video(
+        await send_media_with_retry(client, lambda: client.send_video(
             chat_id=message.chat.id,
             video=video_path,
             caption=f"🎵 **{title}**\n\n📱 Завантажено з TikTok",
             reply_to_message_id=message.id
-        )
+        ))
         
         os.remove(video_path)
         await status_msg.delete()
