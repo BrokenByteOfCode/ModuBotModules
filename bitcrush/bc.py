@@ -1,9 +1,7 @@
 import numpy as np
-import soundfile as sf
-import lameenc
-import os
 import io
 import logging
+import subprocess
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 
@@ -11,36 +9,70 @@ logger = logging.getLogger(__name__)
 
 def apply_bitcrush_effect(audio_bytes, bit_depth=8, sample_rate_reduction=4):
     try:
-        samples, original_samplerate = sf.read(io.BytesIO(audio_bytes))
-    except Exception as e:
-        raise RuntimeError(f"Failed to read audio file. It may be corrupt or in an unsupported format. Details: {e}")
+        ffmpeg_decode_command = [
+            'ffmpeg',
+            '-i', 'pipe:0',
+            '-f', 's16le',
+            '-ac', '1',
+            '-ar', '44100',
+            'pipe:1'
+        ]
 
-    if samples.ndim > 1:
-        samples = np.mean(samples, axis=1)
-    
+        process_decode = subprocess.run(
+            ffmpeg_decode_command,
+            input=audio_bytes,
+            capture_output=True,
+            check=True
+        )
+        raw_audio = process_decode.stdout
+
+    except subprocess.CalledProcessError as e:
+        error_message = e.stderr.decode() if e.stderr else "Unknown FFmpeg error during decoding."
+        logger.error(f"FFmpeg decode error: {error_message}")
+        raise RuntimeError(f"FFmpeg помилка при декодуванні: {error_message}")
+
+    samples = np.frombuffer(raw_audio, dtype=np.int16).astype(np.float32) / 32768.0
+
     max_val = 2**(bit_depth - 1)
     quantized_samples = np.round(samples * max_val) / max_val
-    
+
     downsampled = quantized_samples[::sample_rate_reduction]
-    
+
     original_length = len(samples)
     final_samples_np = np.repeat(downsampled, sample_rate_reduction)
     if len(final_samples_np) > original_length:
         final_samples_np = final_samples_np[:original_length]
 
-    final_samples_int16 = (final_samples_np * 32767).astype(np.int16)
-    
-    encoder = lameenc.Encoder()
-    encoder.set_in_samplerate(original_samplerate)
-    encoder.set_channels(1)
-    encoder.set_quality(2)
+    processed_samples_int16 = (final_samples_np * 32767).astype(np.int16)
+    processed_bytes = processed_samples_int16.tobytes()
 
-    mp3_bytes = encoder.encode(final_samples_int16)
-    mp3_bytes += encoder.flush()
-    
-    output_buffer = io.BytesIO(mp3_bytes)
+    try:
+        ffmpeg_encode_command = [
+            'ffmpeg',
+            '-f', 's16le',
+            '-ar', '44100',
+            '-ac', '1',
+            '-i', 'pipe:0',
+            '-f', 'mp3',
+            '-q:a', '2',
+            'pipe:1'
+        ]
+
+        process_encode = subprocess.run(
+            ffmpeg_encode_command,
+            input=processed_bytes,
+            capture_output=True,
+            check=True
+        )
+        mp3_output = process_encode.stdout
+
+    except subprocess.CalledProcessError as e:
+        error_message = e.stderr.decode() if e.stderr else "Unknown FFmpeg error during encoding."
+        logger.error(f"FFmpeg encode error: {error_message}")
+        raise RuntimeError(f"FFmpeg помилка при кодуванні: {error_message}")
+
+    output_buffer = io.BytesIO(mp3_output)
     output_buffer.seek(0)
-    
     return output_buffer
 
 async def process_audio_for_bitcrush(client, message, bit_depth=8, srr=4):
