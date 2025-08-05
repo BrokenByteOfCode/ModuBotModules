@@ -30,7 +30,13 @@ def apply_bitcrush_effect(audio_bytes, bit_depth=8, sample_rate_reduction=4):
 
     final_samples_int16 = (final_samples_np * 32767).astype(np.int16)
     
-    mp3_bytes = lameenc.encode(final_samples_int16, original_samplerate, 1)
+    encoder = lameenc.Encoder()
+    encoder.set_in_samplerate(original_samplerate)
+    encoder.set_channels(1)
+    encoder.set_quality(2)
+
+    mp3_bytes = encoder.encode(final_samples_int16)
+    mp3_bytes += encoder.flush()
     
     output_buffer = io.BytesIO(mp3_bytes)
     output_buffer.seek(0)
