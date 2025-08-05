@@ -2,6 +2,8 @@ import asyncio
 import os
 import re
 import tempfile
+import time
+from collections import defaultdict
 
 import yt_dlp
 from pyrogram import Client, filters
@@ -48,6 +50,28 @@ async def send_media_with_retry(client, send_func, max_retries=3):
                 raise e
 
 
+MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
+MAX_DOWNLOADS_PER_USER = 2
+RATE_LIMIT_RESET_TIME = 3600
+
+user_downloads = defaultdict(lambda: {"count": 0, "last_reset": time.time()})
+
+
+async def check_user_rate_limit(user_id: int) -> bool:
+    current_time = time.time()
+    user_data = user_downloads[user_id]
+
+    if current_time - user_data["last_reset"] > RATE_LIMIT_RESET_TIME:
+        user_data["count"] = 0
+        user_data["last_reset"] = current_time
+
+    if user_data["count"] >= MAX_DOWNLOADS_PER_USER:
+        return False
+
+    user_data["count"] += 1
+    return True
+
+
 async def download_youtube_video(url, download_audio=False):
     temp_dir = tempfile.gettempdir()
     ydl_opts = {
@@ -72,6 +96,12 @@ async def download_youtube_video(url, download_audio=False):
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+            filesize = info.get('filesize') or info.get('predicted_filesize')
+            if filesize and filesize > MAX_FILE_SIZE:
+                raise Exception("Файл завеликий (більше 2 ГБ)")
+
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             if download_audio:
@@ -86,6 +116,16 @@ async def download_youtube_video(url, download_audio=False):
 
 
 async def yt_command(client: Client, message: Message):
+    user_id = message.from_user.id
+    
+    if not message.from_user.is_self:
+        if not await check_user_rate_limit(user_id):
+            await message.reply_text(
+                "❌ Досягнуто ліміт завантажень (2 відео на годину).\n"
+                "Спробуйте пізніше."
+            )
+            return
+
     url = None
     download_audio = 'audio' in message.command
 
@@ -112,11 +152,6 @@ async def yt_command(client: Client, message: Message):
     try:
         file_path, title, duration = await download_youtube_video(url, download_audio)
 
-        if duration and duration > 1200:
-            await status_msg.edit_text("❌ Відео занадто довге (більше 20 хвилин).")
-            os.remove(file_path)
-            return
-
         await status_msg.edit_text("📤 Відправляю файл...")
 
         if download_audio:
@@ -139,7 +174,7 @@ async def yt_command(client: Client, message: Message):
                     reply_to_message_id=message.id
                 )
             )
-        
+
         os.remove(file_path)
         await status_msg.delete()
 
@@ -150,7 +185,7 @@ async def yt_command(client: Client, message: Message):
 def register_handlers(app: Client):
     yt_handler = MessageHandler(
         yt_command,
-        filters.command("yt", prefixes=".")
+        filters.command("yt", prefixes=".") & (filters.me | filters.users(None))
     )
     app.add_handler(yt_handler)
     
