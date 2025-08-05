@@ -79,10 +79,10 @@ def apply_bitcrush_effect(audio_bytes, bit_depth=8, sample_rate_reduction=4):
 async def process_audio_for_bitcrush(client, message, bit_depth=8, srr=4):
     replied_message = message.reply_to_message
     if not replied_message or not (replied_message.audio or replied_message.voice):
-        await message.reply_text("❌ Будь ласка, дайте відповідь на аудіофайл або голосове повідомлення.")
+        await message.edit_text("❌ Будь ласка, дайте відповідь на аудіофайл або голосове повідомлення.")
         return
 
-    status_msg = await message.reply_text("🎵 Обробка...")
+    await message.edit_text("🎵 Обробка...")
     
     media_to_download = replied_message.audio or replied_message.voice
     
@@ -90,11 +90,11 @@ async def process_audio_for_bitcrush(client, message, bit_depth=8, srr=4):
     
     try:
         downloaded_file = await client.download_media(media_to_download, in_memory=True)
-        await status_msg.edit_text("🔧 Застосування ефекту...")
+        await message.edit_text("🔧 Застосування ефекту...")
         
         processed_audio_buffer = apply_bitcrush_effect(downloaded_file.getbuffer(), bit_depth, srr)
         
-        await status_msg.edit_text("📤 Завантаження...")
+        await message.edit_text("📤 Завантаження...")
         
         caption_text = f"🎛 **Bitcrushed Audio**\n{bit_depth}-bit • {srr}x reduction"
         
@@ -104,11 +104,11 @@ async def process_audio_for_bitcrush(client, message, bit_depth=8, srr=4):
             file_name="bitcrushed.mp3"
         )
         
-        await status_msg.delete()
+        await message.delete()
 
     except Exception as e:
         logger.error(f"Error processing audio for bitcrush: {e}", exc_info=True)
-        await status_msg.edit_text(f"❌ Помилка обробки: {str(e)}")
+        await message.edit_text(f"❌ Помилка обробки: {str(e)}")
     finally:
         if downloaded_file:
             downloaded_file.close()
