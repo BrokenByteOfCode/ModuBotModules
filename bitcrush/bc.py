@@ -2,6 +2,8 @@ import numpy as np
 import io
 import logging
 import subprocess
+import tempfile
+import os
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 
@@ -64,16 +66,12 @@ def apply_bitcrush_effect(audio_bytes, bit_depth=8, sample_rate_reduction=4):
             capture_output=True,
             check=True
         )
-        mp3_output = process_encode.stdout
+        return process_encode.stdout
 
     except subprocess.CalledProcessError as e:
         error_message = e.stderr.decode() if e.stderr else "Unknown FFmpeg error during encoding."
         logger.error(f"FFmpeg encode error: {error_message}")
         raise RuntimeError(f"FFmpeg помилка при кодуванні: {error_message}")
-
-    output_buffer = io.BytesIO(mp3_output)
-    output_buffer.seek(0)
-    return output_buffer
 
 async def process_audio_for_bitcrush(client, message, bit_depth=8, srr=4):
     replied_message = message.reply_to_message
@@ -86,18 +84,24 @@ async def process_audio_for_bitcrush(client, message, bit_depth=8, srr=4):
     media_to_download = replied_message.audio or replied_message.voice
     
     downloaded_file = None
+    temp_file_path = None
+    
     try:
         downloaded_file = await client.download_media(media_to_download, in_memory=True)
         await status_msg.edit_text("🔧 Застосування ефекту...")
         
-        processed_audio_buffer = apply_bitcrush_effect(downloaded_file.getbuffer(), bit_depth, srr)
+        processed_audio_bytes = apply_bitcrush_effect(downloaded_file.getbuffer(), bit_depth, srr)
         
         await status_msg.edit_text("📤 Завантаження...")
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+            temp_file.write(processed_audio_bytes)
+            temp_file_path = temp_file.name
         
         caption_text = f"🎛 **Bitcrushed Audio**\n{bit_depth}-bit • {srr}x reduction"
         
         await message.reply_audio(
-            audio=(processed_audio_buffer, "bitcrushed.mp3"),
+            audio=temp_file_path,
             caption=caption_text
         )
         
@@ -109,6 +113,8 @@ async def process_audio_for_bitcrush(client, message, bit_depth=8, srr=4):
     finally:
         if downloaded_file:
             downloaded_file.close()
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
 
 async def bitcrush_command(client, message):
     await process_audio_for_bitcrush(client, message, bit_depth=8, srr=4)
