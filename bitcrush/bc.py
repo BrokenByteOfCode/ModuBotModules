@@ -1,5 +1,6 @@
 import numpy as np
-from pydub import AudioSegment
+import soundfile as sf
+import lameenc
 import os
 import io
 import logging
@@ -9,10 +10,13 @@ from pyrogram.handlers import MessageHandler
 logger = logging.getLogger(__name__)
 
 def apply_bitcrush_effect(audio_bytes, bit_depth=8, sample_rate_reduction=4):
-    audio = AudioSegment.from_file(io.BytesIO(audio_bytes)).set_channels(1)
-    
-    samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
-    samples /= np.iinfo(audio.array_type).max
+    try:
+        samples, original_samplerate = sf.read(io.BytesIO(audio_bytes))
+    except Exception as e:
+        raise RuntimeError(f"Failed to read audio file. It may be corrupt or in an unsupported format. Details: {e}")
+
+    if samples.ndim > 1:
+        samples = np.mean(samples, axis=1)
     
     max_val = 2**(bit_depth - 1)
     quantized_samples = np.round(samples * max_val) / max_val
@@ -24,12 +28,11 @@ def apply_bitcrush_effect(audio_bytes, bit_depth=8, sample_rate_reduction=4):
     if len(final_samples_np) > original_length:
         final_samples_np = final_samples_np[:original_length]
 
-    final_samples_np = (final_samples_np * np.iinfo(audio.array_type).max).astype(audio.array_type)
+    final_samples_int16 = (final_samples_np * 32767).astype(np.int16)
     
-    bitcrushed_audio = audio._spawn(final_samples_np.tobytes())
+    mp3_bytes = lameenc.encode(final_samples_int16, original_samplerate, 1)
     
-    output_buffer = io.BytesIO()
-    bitcrushed_audio.export(output_buffer, format="mp3")
+    output_buffer = io.BytesIO(mp3_bytes)
     output_buffer.seek(0)
     
     return output_buffer
