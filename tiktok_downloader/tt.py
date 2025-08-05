@@ -74,7 +74,7 @@ async def tt_command(client: Client, message: Message):
 def register_handlers(app: Client):
     tt_handler = MessageHandler(
         tt_command,
-        filters.command("tt", prefixes=".") & filters.me
+        filters.command("tt", prefixes=".")
     )
     
     handlers_list = [tt_handler]
