@@ -30,6 +30,7 @@ async def extract_tiktok_url(text):
         r'https?://(?:www\.)?tiktok\.com/@[\w.-]+/video/\d+',
         r'https?://vm\.tiktok\.com/[\w]+',
         r'https?://(?:www\.)?tiktok\.com/t/[\w]+',
+        r'https?://vt\.tiktok\.com/[\w]+',
     ]
     
     for pattern in tiktok_patterns:
