@@ -61,7 +61,15 @@ async def shakalize_command(client: Client, message: Message):
         await message.reply_text("Медіа файл не знайдено. Підтримуються фото, відео та аудіо")
         return
     
-    progress_msg = await message.reply_text(f"Обробляю медіа з максимальною деградацією (рівень: {quality_level})...")
+    progress_msg = None
+    
+    try:
+        progress_msg = await message.reply_text(f"Обробляю медіа з максимальною деградацією (рівень: {quality_level})...")
+    except Exception as e:
+        if "SLOWMODE_WAIT" in str(e):
+            progress_msg = None
+        else:
+            raise e
     
     try:
         if media_type == "photo":
@@ -71,7 +79,13 @@ async def shakalize_command(client: Client, message: Message):
         elif media_type in ["audio", "voice"]:
             await ultra_shakalize_audio(client, message, media, quality_level, progress_msg)
     except Exception as e:
-        await progress_msg.edit_text(f"Критична помилка при обробці: {str(e)}")
+        if progress_msg:
+            try:
+                await progress_msg.edit_text(f"Критична помилка при обробці: {str(e)}")
+            except:
+                await message.reply_text(f"Критична помилка при обробці: {str(e)}")
+        else:
+            await message.reply_text(f"Критична помилка при обробці: {str(e)}")
 
 
 async def ultra_shakalize_photo(client: Client, message: Message, photo, quality_level: int, progress_msg):
