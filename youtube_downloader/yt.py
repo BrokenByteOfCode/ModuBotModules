@@ -4,12 +4,29 @@ import re
 import tempfile
 import time
 from collections import defaultdict
+import json
 
 import yt_dlp
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
+
+MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
+MAX_DOWNLOADS_PER_USER = 2
+RATE_LIMIT_RESET_TIME = 3600
+SUDO_USERS_FILE = "SUDOUsers.json"
+
+user_downloads = defaultdict(lambda: {"count": 0, "last_reset": time.time()})
+
+def load_sudo_users():
+    try:
+        if os.path.exists(SUDO_USERS_FILE):
+            with open(SUDO_USERS_FILE, "r", encoding="utf-8") as file:
+                return json.load(file)
+    except (json.JSONDecodeError, IOError):
+        return []
+    return []
 
 
 async def extract_youtube_url(text):
@@ -20,7 +37,6 @@ async def extract_youtube_url(text):
         r'https?://m\.youtube\.com/watch\?v=[\w-]+',
         r'https?://music\.youtube\.com/watch\?v=[\w-]+',
     ]
-
     for pattern in youtube_patterns:
         match = re.search(pattern, text)
         if match:
@@ -48,13 +64,6 @@ async def send_media_with_retry(client, send_func, max_retries=3):
                 continue
             else:
                 raise e
-
-
-MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
-MAX_DOWNLOADS_PER_USER = 2
-RATE_LIMIT_RESET_TIME = 3600
-
-user_downloads = defaultdict(lambda: {"count": 0, "last_reset": time.time()})
 
 
 async def check_user_rate_limit(user_id: int) -> bool:
@@ -114,11 +123,11 @@ async def download_youtube_video(url, download_audio=False):
         else:
             raise Exception(f"Помилка завантаження: {e}")
 
-
 async def yt_command(client: Client, message: Message):
     user_id = message.from_user.id
-    
-    if not message.from_user.is_self:
+    sudo_users = load_sudo_users()
+
+    if user_id not in sudo_users:
         if not await check_user_rate_limit(user_id):
             await message.reply_text(
                 "❌ Досягнуто ліміт завантажень (2 відео на годину).\n"
@@ -181,11 +190,10 @@ async def yt_command(client: Client, message: Message):
     except Exception as e:
         await status_msg.edit_text(f"❌ Помилка: {e}")
 
-
 def register_handlers(app: Client):
     yt_handler = MessageHandler(
         yt_command,
-        filters.command("yt", prefixes=".") & (filters.me | filters.users(None))
+        filters.command("yt", prefixes=".")
     )
     app.add_handler(yt_handler)
     
