@@ -76,7 +76,18 @@ async def shakalize_command(client: Client, message: Message):
 
 async def ultra_shakalize_photo(client: Client, message: Message, photo, quality_level: int, progress_msg):
     with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_input:
-        await client.download_media(photo, temp_input.name)
+        try:
+            await client.download_media(photo, temp_input.name)
+        except Exception as e:
+            if "FILE_REFERENCE_EXPIRED" in str(e):
+                target_message = message.reply_to_message if message.reply_to_message else message
+                fresh_message = await client.get_messages(target_message.chat.id, target_message.id)
+                if fresh_message.photo:
+                    await client.download_media(fresh_message.photo, temp_input.name)
+                else:
+                    raise Exception("Не вдалося отримати свіжий file reference для зображення")
+            else:
+                raise e
         
         with Image.open(temp_input.name) as img:
             img = img.convert('RGB')
@@ -210,7 +221,20 @@ async def ultra_shakalize_photo(client: Client, message: Message, photo, quality
 
 async def ultra_shakalize_video(client: Client, message: Message, video, quality_level: int, progress_msg):
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_input:
-        await client.download_media(video, temp_input.name)
+        try:
+            await client.download_media(video, temp_input.name)
+        except Exception as e:
+            if "FILE_REFERENCE_EXPIRED" in str(e):
+                target_message = message.reply_to_message if message.reply_to_message else message
+                fresh_message = await client.get_messages(target_message.chat.id, target_message.id)
+                if fresh_message.video:
+                    await client.download_media(fresh_message.video, temp_input.name)
+                elif fresh_message.document and fresh_message.document.mime_type.startswith('video/'):
+                    await client.download_media(fresh_message.document, temp_input.name)
+                else:
+                    raise Exception("Не вдалося отримати свіжий file reference для відео")
+            else:
+                raise e
         
         degradation_factor = (10 - quality_level) / 10.0
         chaos_multiplier = 1 + degradation_factor * 4
@@ -322,7 +346,22 @@ async def ultra_shakalize_video(client: Client, message: Message, video, quality
 
 async def ultra_shakalize_audio(client: Client, message: Message, audio, quality_level: int, progress_msg):
     with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_input:
-        await client.download_media(audio, temp_input.name)
+        try:
+            await client.download_media(audio, temp_input.name)
+        except Exception as e:
+            if "FILE_REFERENCE_EXPIRED" in str(e):
+                target_message = message.reply_to_message if message.reply_to_message else message
+                fresh_message = await client.get_messages(target_message.chat.id, target_message.id)
+                if fresh_message.audio:
+                    await client.download_media(fresh_message.audio, temp_input.name)
+                elif fresh_message.voice:
+                    await client.download_media(fresh_message.voice, temp_input.name)
+                elif fresh_message.document and fresh_message.document.mime_type.startswith('audio/'):
+                    await client.download_media(fresh_message.document, temp_input.name)
+                else:
+                    raise Exception("Не вдалося отримати свіжий file reference для аудіо")
+            else:
+                raise e
         
         degradation_factor = (10 - quality_level) / 10.0
         chaos_multiplier = 1 + degradation_factor * 5
@@ -400,7 +439,7 @@ async def ultra_shakalize_audio(client: Client, message: Message, audio, quality
                 )
                 
             except Exception as e:
-                await progress_msg.edit_text(f"❌💀 КРИТИЧНА ПОМИЛКА АУДІО-ХАОСУ: {str(e)} 💀❌")
+                await progress_msg.edit_text(f"Помилка обробки аудіо: {str(e)}")
             finally:
                 os.unlink(temp_output.name)
         
