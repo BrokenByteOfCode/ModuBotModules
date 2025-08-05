@@ -10,7 +10,7 @@ import random
 
 
 async def shakalize_command(client: Client, message: Message):
-    quality_level = 10
+    quality_level = 1
     
     if len(message.command) > 1:
         try:
