@@ -46,7 +46,8 @@ def db_load_setting(key):
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
         res = cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
-        return row[0] if (row := res.fetchone()) else None
+        row = res.fetchone()
+        return row[0] if row else None
 
 def db_delete_setting(key):
     with sqlite3.connect(DB_PATH) as con:
