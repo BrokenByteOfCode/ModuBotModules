@@ -1,7 +1,7 @@
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
-from pyrogram.errors import FloodWait, ChatAdminRequired, UserAdminInvalid, PeerIdInvalid
+from pyrogram.errors import FloodWait, ChatAdminRequired, UserAdminInvalid, PeerIdInvalid, RPCError
 import asyncio
 
 async def ban_command(client: Client, message: Message):
@@ -25,15 +25,21 @@ async def ban_command(client: Client, message: Message):
                 username = user_input[1:]
                 try:
                     target_user = await client.get_users(username)
-                except Exception:
+                except PeerIdInvalid:
                     await message.edit_text(f"❌ @{username} не знайдений")
+                    return
+                except Exception as e:
+                    await message.edit_text(f"❌ Помилка пошуку користувача: {str(e)}")
                     return
             
             elif user_input.isdigit():
                 try:
                     target_user = await client.get_users(int(user_input))
-                except Exception:
-                    await message.edit_text("❌ Користувач не знайдений")
+                except PeerIdInvalid:
+                    await message.edit_text("❌ Користувач з таким ID не знайдений")
+                    return
+                except Exception as e:
+                    await message.edit_text(f"❌ Помилка пошуку користувача: {str(e)}")
                     return
             
             else:
@@ -45,11 +51,10 @@ async def ban_command(client: Client, message: Message):
         
         else:
             await message.edit_text(
-                "**Використання бану:**\n"
+                "**Використання:**\n"
                 "• `.ban` (відповідь на повідомлення)\n"
-                "• `.ban @username`\n" 
-                "• `.ban ID`\n"
-                "• `.ban @username причина`"
+                "• `.ban @username [причина]`\n" 
+                "• `.ban ID [причина]`"
             )
             return
 
@@ -61,7 +66,10 @@ async def ban_command(client: Client, message: Message):
             await message.edit_text("❌ Неможливо забанити себе")
             return
 
-        await client.ban_chat_member(message.chat.id, target_user.id)
+        try:
+            await message.chat.ban_member(target_user.id)
+        except AttributeError:
+            await client.ban_chat_member(message.chat.id, target_user.id)
         
         user_name = f"@{target_user.username}" if target_user.username else target_user.first_name
         
@@ -73,13 +81,15 @@ async def ban_command(client: Client, message: Message):
         )
 
     except ChatAdminRequired:
-        await message.edit_text("❌ Немає прав адміна в групі")
+        await message.edit_text("❌ Бот не має прав адміна або ти не адмін")
     except UserAdminInvalid:
-        await message.edit_text("❌ Неможливо забанити цього користувача")
+        await message.edit_text("❌ Недостатньо прав для бану цього користувача")
     except FloodWait as e:
         await message.edit_text(f"⏳ Флуд контроль: {e.x}с")
+    except RPCError as e:
+        await message.edit_text(f"❌ Telegram API помилка: {e}")
     except Exception as e:
-        await message.edit_text(f"❌ Помилка: {str(e)}")
+        await message.edit_text(f"❌ Непередбачена помилка: {str(e)}")
 
 async def unban_command(client: Client, message: Message):
     try:
@@ -99,15 +109,21 @@ async def unban_command(client: Client, message: Message):
                 username = user_input[1:]
                 try:
                     target_user = await client.get_users(username)
-                except Exception:
+                except PeerIdInvalid:
                     await message.edit_text(f"❌ @{username} не знайдений")
+                    return
+                except Exception as e:
+                    await message.edit_text(f"❌ Помилка пошуку користувача: {str(e)}")
                     return
             
             elif user_input.isdigit():
                 try:
                     target_user = await client.get_users(int(user_input))
-                except Exception:
-                    await message.edit_text("❌ Користувач не знайдений")
+                except PeerIdInvalid:
+                    await message.edit_text("❌ Користувач з таким ID не знайдений")
+                    return
+                except Exception as e:
+                    await message.edit_text(f"❌ Помилка пошуку користувача: {str(e)}")
                     return
             
             else:
@@ -116,7 +132,7 @@ async def unban_command(client: Client, message: Message):
         
         else:
             await message.edit_text(
-                "**Використання розбану:**\n"
+                "**Використання:**\n"
                 "• `.unban` (відповідь на повідомлення)\n"
                 "• `.unban @username`\n"
                 "• `.unban ID`"
@@ -127,7 +143,10 @@ async def unban_command(client: Client, message: Message):
             await message.edit_text("❌ Користувач не визначений")
             return
 
-        await client.unban_chat_member(message.chat.id, target_user.id)
+        try:
+            await message.chat.unban_member(target_user.id)
+        except AttributeError:
+            await client.unban_chat_member(message.chat.id, target_user.id)
         
         user_name = f"@{target_user.username}" if target_user.username else target_user.first_name
         
@@ -138,13 +157,15 @@ async def unban_command(client: Client, message: Message):
         )
 
     except ChatAdminRequired:
-        await message.edit_text("❌ Немає прав адміна в групі")
+        await message.edit_text("❌ Бот не має прав адміна або ти не адмін")
     except UserAdminInvalid:
-        await message.edit_text("❌ Неможливо розбанити цього користувача")
+        await message.edit_text("❌ Недостатньо прав для розбану цього користувача")
     except FloodWait as e:
         await message.edit_text(f"⏳ Флуд контроль: {e.x}с")
+    except RPCError as e:
+        await message.edit_text(f"❌ Telegram API помилка: {e}")
     except Exception as e:
-        await message.edit_text(f"❌ Помилка: {str(e)}")
+        await message.edit_text(f"❌ Непередбачена помилка: {str(e)}")
 
 async def kick_command(client: Client, message: Message):
     try:
@@ -164,15 +185,21 @@ async def kick_command(client: Client, message: Message):
                 username = user_input[1:]
                 try:
                     target_user = await client.get_users(username)
-                except Exception:
+                except PeerIdInvalid:
                     await message.edit_text(f"❌ @{username} не знайдений")
+                    return
+                except Exception as e:
+                    await message.edit_text(f"❌ Помилка пошуку користувача: {str(e)}")
                     return
             
             elif user_input.isdigit():
                 try:
                     target_user = await client.get_users(int(user_input))
-                except Exception:
-                    await message.edit_text("❌ Користувач не знайдений")
+                except PeerIdInvalid:
+                    await message.edit_text("❌ Користувач з таким ID не знайдений")
+                    return
+                except Exception as e:
+                    await message.edit_text(f"❌ Помилка пошуку користувача: {str(e)}")
                     return
             
             else:
@@ -181,7 +208,7 @@ async def kick_command(client: Client, message: Message):
         
         else:
             await message.edit_text(
-                "**Використання кіка:**\n"
+                "**Використання:**\n"
                 "• `.kick` (відповідь на повідомлення)\n"
                 "• `.kick @username`\n"
                 "• `.kick ID`"
@@ -196,9 +223,14 @@ async def kick_command(client: Client, message: Message):
             await message.edit_text("❌ Неможливо кікнути себе")
             return
 
-        await client.ban_chat_member(message.chat.id, target_user.id)
-        await asyncio.sleep(1)
-        await client.unban_chat_member(message.chat.id, target_user.id)
+        try:
+            await message.chat.ban_member(target_user.id)
+            await asyncio.sleep(1)
+            await message.chat.unban_member(target_user.id)
+        except AttributeError:
+            await client.ban_chat_member(message.chat.id, target_user.id)
+            await asyncio.sleep(1)
+            await client.unban_chat_member(message.chat.id, target_user.id)
         
         user_name = f"@{target_user.username}" if target_user.username else target_user.first_name
         
@@ -209,13 +241,15 @@ async def kick_command(client: Client, message: Message):
         )
 
     except ChatAdminRequired:
-        await message.edit_text("❌ Немає прав адміна в групі")
+        await message.edit_text("❌ Бот не має прав адміна або ти не адмін")
     except UserAdminInvalid:
-        await message.edit_text("❌ Неможливо кікнути цього користувача")
+        await message.edit_text("❌ Недостатньо прав для кіка цього користувача")
     except FloodWait as e:
         await message.edit_text(f"⏳ Флуд контроль: {e.x}с")
+    except RPCError as e:
+        await message.edit_text(f"❌ Telegram API помилка: {e}")
     except Exception as e:
-        await message.edit_text(f"❌ Помилка: {str(e)}")
+        await message.edit_text(f"❌ Непередбачена помилка: {str(e)}")
 
 def register_handlers(app: Client):
     
