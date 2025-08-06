@@ -46,7 +46,7 @@ def db_load_setting(key):
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
         res = cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
-        return res.fetchone()[0] if (row := res.fetchone()) else None
+        return row[0] if (row := res.fetchone()) else None
 
 def db_delete_setting(key):
     with sqlite3.connect(DB_PATH) as con:
@@ -59,13 +59,14 @@ def db_load_history(chat_id):
         cur = con.cursor()
         res = cur.execute("SELECT history FROM chat_history WHERE chat_id = ?", (chat_id,))
         if row := res.fetchone():
-            return [Content.from_dict(d) for d in json.loads(row[0])]
+            return json.loads(row[0])
     return []
 
 def db_save_history(chat_id, history):
+    history_dicts = [Content.to_dict(c) for c in history]
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
-        cur.execute("INSERT OR REPLACE INTO chat_history (chat_id, history) VALUES (?, ?)", (chat_id, json.dumps([Content.to_dict(c) for c in history])))
+        cur.execute("INSERT OR REPLACE INTO chat_history (chat_id, history) VALUES (?, ?)", (chat_id, json.dumps(history_dicts)))
         con.commit()
 
 def db_clear_history(chat_id):
@@ -84,11 +85,12 @@ def initialize_gemini():
     
     if not api_key:
         print("GEMINI_API_KEY не знайдено. Очікування ключа через команду .api")
+        model = None
         return False
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(
-            'gemini-1.5-flash',
+            'gemini-2.5-flash',
             safety_settings=safety_settings,
             system_instruction=current_system_instruction
         )
@@ -173,7 +175,7 @@ async def ai_command(client, message):
                 return
         
         response = await chat_session.send_message_async(content_for_gemini)
-        await thinking_message.edit_text(response.text, parse_mode=None)
+        await thinking_message.edit_text(response.text)
         db_save_history(chat_id, chat_session.history)
     except Exception as e:
         await thinking_message.edit_text(f"**Помилка Gemini AI:**\n`{e}`")
