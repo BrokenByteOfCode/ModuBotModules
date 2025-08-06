@@ -1,5 +1,6 @@
 import os
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
@@ -8,6 +9,12 @@ from dotenv import load_dotenv, set_key, find_dotenv
 
 model = None
 chat_sessions = {}
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+}
 
 def initialize_gemini():
     global model
@@ -21,14 +28,16 @@ def initialize_gemini():
         
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        print("Модуль Gemini AI успішно завантажено та ініціалізовано.")
+        model = genai.GenerativeModel(
+            'gemini-1.5-flash',
+            safety_settings=safety_settings
+        )
+        print("Модуль Gemini AI успішно завантажено з кастомними налаштуваннями безпеки.")
         return True
     except Exception as e:
         print(f"Помилка ініціалізації Gemini: {e}")
         model = None
         return False
-
 
 async def set_api_key_command(client: Client, message: Message):
     global model
@@ -37,7 +46,7 @@ async def set_api_key_command(client: Client, message: Message):
         await message.reply_text(
             "Будь ласка, вкажіть ваш API ключ.\n"
             "Приклад: `.api YOUR_API_KEY`\n\n"
-            "Ваш ключ буде збережено у файл `.env` та використано для подальших запитів."
+            "Ваш ключ буде збережено у файл `.env`."
         )
         return
 
@@ -49,29 +58,37 @@ async def set_api_key_command(client: Client, message: Message):
 
     try:
         set_key(dotenv_path, "GEMINI_API_KEY", new_api_key)
-        await message.reply_text("`API ключ збережено. Намагаюся ініціалізувати модель...`")
+        await message.reply_text("`API ключ збережено. Ініціалізую модель...`")
 
         if initialize_gemini():
-            await message.reply_text("✅ **Успіх!** Модель Gemini активовано. Можна користуватись.")
+            await message.reply_text("✅ **Успіх!** Модель Gemini активовано.")
         else:
             await message.reply_text("❌ **Помилка.** Ключ збережено, але модель не вдалося ініціалізувати. Можливо, ключ недійсний.")
             
     except Exception as e:
         await message.reply_text(f"**Не вдалося зберегти ключ:**\n`{e}`")
 
+async def clear_memory_command(client: Client, message: Message):
+    chat_id = message.chat.id
+    if chat_id in chat_sessions:
+        del chat_sessions[chat_id]
+        await message.reply_text("🧹 **Пам'ять для цього чату очищено.**")
+        print(f"Сесію чату очищено для ID: {chat_id}")
+    else:
+        await message.reply_text("🤔 Для цього чату немає збереженої історії.")
 
 async def ai_command(client: Client, message: Message):
     if not model:
         await message.reply_text(
             "Помилка: Модуль Gemini AI не налаштовано.\n"
-            "Встановіть ваш API ключ, надіславши мені в особисті повідомлення команду:\n"
+            "Встановіть API ключ, надіславши мені в особисті повідомлення:\n"
             "`.api ВАШ_КЛЮЧ`"
         )
         return
 
     if len(message.command) < 2 and not (message.reply_to_message and message.reply_to_message.media):
         await message.reply_text(
-            "Будь ласка, введіть запит після `.ai` або дайте відповідь на файл цією командою."
+            "Введіть запит після `.ai` або дайте відповідь на файл цією командою."
         )
         return
 
@@ -117,9 +134,7 @@ async def ai_command(client: Client, message: Message):
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
 
-
 def register_handlers(app: Client):
-
     initialize_gemini()
     
     api_key_handler = MessageHandler(
@@ -132,7 +147,12 @@ def register_handlers(app: Client):
         filters.command("ai", prefixes=".")
     )
     
-    handlers_list = [api_key_handler, ai_handler]
+    clear_handler = MessageHandler(
+        clear_memory_command,
+        filters.command("clear", prefixes=".")
+    )
+    
+    handlers_list = [api_key_handler, ai_handler, clear_handler]
 
     for handler in handlers_list:
         app.add_handler(handler)
