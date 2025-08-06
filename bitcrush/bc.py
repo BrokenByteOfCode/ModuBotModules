@@ -135,8 +135,8 @@ async def bitcrush_custom_command(client, message):
 
 def register_handlers(app: Client):
     handlers_list = [
-        MessageHandler(bitcrush_command, filters.command("bitcrush", prefixes=".") & filters.reply & filters.me),
-        MessageHandler(bitcrush_custom_command, filters.command("bitcrushcustom", prefixes=".") & filters.reply & filters.me)
+        MessageHandler(bitcrush_command, filters.command("bitcrush", prefixes=".")),
+        MessageHandler(bitcrush_custom_command, filters.command("bitcrushcustom", prefixes="."))
     ]
 
     for handler in handlers_list:
