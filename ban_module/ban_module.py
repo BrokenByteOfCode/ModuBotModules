@@ -165,12 +165,12 @@ def register_handlers(app: Client):
     
     ban_handler = MessageHandler(
         ban_command,
-        filters.command("ban", prefixes=".") & filters.me
+        filters.command("ban", prefixes=".")
     )
     
     unban_handler = MessageHandler(
         unban_command,
-        filters.command("unban", prefixes=".") & filters.me
+        filters.command("unban", prefixes=".")
     )
 
     handlers_list = [ban_handler, unban_handler]
