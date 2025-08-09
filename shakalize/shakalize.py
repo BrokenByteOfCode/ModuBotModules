@@ -233,12 +233,12 @@ async def epic_command(client: Client, message: Message):
 def register_handlers(app: Client):
     shakalize_handler = MessageHandler(
         shakalize_command,
-        filters.command("shakalize", prefixes=".") & filters.me
+        filters.command("shakalize", prefixes=".")
     )
     
     epic_handler = MessageHandler(
         epic_command,
-        filters.command("epic", prefixes=".") & filters.me
+        filters.command("epic", prefixes=".")
     )
 
     handlers_list = [shakalize_handler, epic_handler]
