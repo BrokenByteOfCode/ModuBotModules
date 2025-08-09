@@ -1,10 +1,10 @@
 import os
 import io
 import random
+import subprocess
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
-from moviepy.editor import VideoFileClip
 from PIL import Image, ImageFilter, ImageEnhance
 import numpy as np
 
@@ -50,50 +50,49 @@ def process_image(file_path, level):
         enhancer = ImageEnhance.Color(img)
         img = enhancer.enhance(0.5)
         
+    if level >= 8:
+        img_array = np.array(img)
+        noise = np.random.randint(-50, 50, img_array.shape, dtype=np.int16)
+        img_array = np.clip(img_array.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+        img = Image.fromarray(img_array)
+        
     buffer = io.BytesIO()
     img.save(buffer, format='JPEG', quality=jpeg_quality)
     buffer.seek(0)
     
     return Image.open(buffer)
 
-def process_video(file_path, level):
-    clip = VideoFileClip(file_path)
-    
-    if level == 0:
-        return clip
-    
+def process_video_ffmpeg(input_path, output_path, level):
     quality_map = {
-        1: (480, 128),
-        2: (360, 96),
-        3: (240, 64),
-        4: (180, 48),
-        5: (144, 32),
-        6: (120, 24),
-        7: (96, 16),
-        8: (72, 12),
-        9: (48, 8),
-        10: (36, 4)
+        1: ("480", "128k", "24"),
+        2: ("360", "96k", "20"),
+        3: ("240", "64k", "15"),
+        4: ("180", "48k", "12"),
+        5: ("144", "32k", "10"),
+        6: ("120", "24k", "8"),
+        7: ("96", "16k", "6"),
+        8: ("72", "12k", "4"),
+        9: ("48", "8k", "3"),
+        10: ("36", "4k", "2")
     }
     
-    height, audio_bitrate = quality_map.get(level, (36, 4))
+    height, audio_bitrate, fps = quality_map.get(level, ("36", "4k", "2"))
     
-    clip = clip.resize(height=height)
+    cmd = [
+        "ffmpeg", "-i", input_path,
+        "-vf", f"scale=-1:{height}",
+        "-r", fps,
+        "-b:a", audio_bitrate,
+        "-crf", str(min(51, 18 + level * 3)),
+        "-preset", "ultrafast",
+        "-y", output_path
+    ]
     
-    if level >= 5:
-        clip = clip.fx(lambda gf, t: gf(t).astype('uint8'))
-        
-    if level >= 7:
-        fps = max(1, 24 - level * 2)
-        clip = clip.set_fps(fps)
-        
     if level >= 8:
-        def add_noise(get_frame, t):
-            frame = get_frame(t)
-            noise = np.random.randint(0, 50, frame.shape, dtype=np.uint8)
-            return np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
-        clip = clip.fl(add_noise)
+        cmd.insert(-2, "-vf")
+        cmd.insert(-2, f"scale=-1:{height},noise=alls=20:allf=t+u")
     
-    return clip
+    subprocess.run(cmd, capture_output=True)
 
 def epic_process_image(file_path):
     img = Image.open(file_path)
@@ -117,33 +116,34 @@ def epic_process_image(file_path):
     enhancer = ImageEnhance.Sharpness(img)
     img = enhancer.enhance(random.uniform(0.1, 10.0))
     
+    img_array = np.array(img)
+    noise_level = random.randint(80, 200)
+    noise = np.random.randint(-noise_level, noise_level, img_array.shape, dtype=np.int16)
+    img_array = np.clip(img_array.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+    img = Image.fromarray(img_array)
+    
     buffer = io.BytesIO()
     img.save(buffer, format='JPEG', quality=random.randint(1, 15))
     buffer.seek(0)
     
     return Image.open(buffer)
 
-def epic_process_video(file_path):
-    clip = VideoFileClip(file_path)
+def epic_process_video_ffmpeg(input_path, output_path):
+    height = random.randint(24, 72)
+    fps = random.randint(1, 5)
+    audio_bitrate = random.choice(["4k", "8k", "12k"])
     
-    clip = clip.resize(height=random.randint(24, 72))
-    clip = clip.set_fps(random.randint(1, 8))
+    cmd = [
+        "ffmpeg", "-i", input_path,
+        "-vf", f"scale=-1:{height},noise=alls={random.randint(50,100)}:allf=t+u,hue=s={random.uniform(0.1, 3.0)}",
+        "-r", str(fps),
+        "-b:a", audio_bitrate,
+        "-crf", "51",
+        "-preset", "ultrafast",
+        "-y", output_path
+    ]
     
-    def epic_effect(get_frame, t):
-        frame = get_frame(t)
-        
-        noise_level = random.randint(50, 150)
-        noise = np.random.randint(-noise_level, noise_level, frame.shape, dtype=np.int16)
-        frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
-        
-        if random.random() > 0.7:
-            frame = np.roll(frame, random.randint(-50, 50), axis=random.randint(0, 1))
-        
-        return frame
-    
-    clip = clip.fl(epic_effect)
-    
-    return clip
+    subprocess.run(cmd, capture_output=True)
 
 async def shakalize_command(client: Client, message: Message):
     try:
@@ -179,11 +179,8 @@ async def shakalize_command(client: Client, message: Message):
             os.remove(output_path)
             
         elif file_ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.gif']:
-            processed_clip = process_video(file_path, level)
-            
             output_path = f"shakalized_{level}_{os.path.splitext(os.path.basename(file_path))[0]}.mp4"
-            processed_clip.write_videofile(output_path, verbose=False, logger=None)
-            processed_clip.close()
+            process_video_ffmpeg(file_path, output_path, level)
             
             await message.reply_video(output_path)
             os.remove(output_path)
@@ -218,11 +215,8 @@ async def epic_command(client: Client, message: Message):
             os.remove(output_path)
             
         elif file_ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.gif']:
-            processed_clip = epic_process_video(file_path)
-            
             output_path = f"epic_{os.path.splitext(os.path.basename(file_path))[0]}.mp4"
-            processed_clip.write_videofile(output_path, verbose=False, logger=None, audio_bitrate="8k")
-            processed_clip.close()
+            epic_process_video_ffmpeg(file_path, output_path)
             
             await message.reply_video(output_path)
             os.remove(output_path)
@@ -239,12 +233,12 @@ async def epic_command(client: Client, message: Message):
 def register_handlers(app: Client):
     shakalize_handler = MessageHandler(
         shakalize_command,
-        filters.command("shakalize", prefixes=".")
+        filters.command("shakalize", prefixes=".") & filters.me
     )
     
     epic_handler = MessageHandler(
         epic_command,
-        filters.command("epic", prefixes=".")
+        filters.command("epic", prefixes=".") & filters.me
     )
 
     handlers_list = [shakalize_handler, epic_handler]
