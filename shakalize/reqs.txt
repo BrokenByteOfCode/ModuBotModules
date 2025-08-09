@@ -1,2 +1,3 @@
+moviepy
 pillow
-ffmpeg-python
+numpy
