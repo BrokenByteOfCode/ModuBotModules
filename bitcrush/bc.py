@@ -15,14 +15,13 @@ async def bitcrush_command(client: Client, message: Message):
     if process.returncode != 0:
         await message.reply_text(
             "🔴 **Помилка: `ffmpeg` не знайдено.**\n"
-            "Цей модуль вимагає встановленого `ffmpeg`.\n\n"
             "Встановіть його на сервер:\n"
             "`sudo apt update && sudo apt install ffmpeg`"
         )
         return
 
     if not message.reply_to_message or not (message.reply_to_message.audio or message.reply_to_message.voice):
-        await message.reply_text("Відповіси на аудіо чи голосове повідомлення.")
+        await message.reply_text("Дай відповідь на аудіо чи голосове повідомлення.")
         return
 
     target_message = message.reply_to_message
@@ -40,11 +39,11 @@ async def bitcrush_command(client: Client, message: Message):
     status_message = await message.reply_text("👾...")
 
     input_path = None
-    output_path = None
+    output_path = f"downloads/{message.id}_bitcrushed.ogg"
+    
     try:
         input_path = await client.download_media(target_message)
-        output_path = f"downloads/{random.randint(1000, 9999)}_bitcrushed.ogg"
-
+        
         cmd = (
             f'ffmpeg -y -i "{input_path}" '
             f'-af "aformat=sample_fmts={ffmpeg_format},asetrate={sample_rate}" '
@@ -65,15 +64,20 @@ async def bitcrush_command(client: Client, message: Message):
 
         caption = f"Crushed: {actual_bit_depth}-bit, {sample_rate}Hz"
         if random.randint(1, 3) == 1:
-            caption += "\n\n💡 `.bc 8 8000`"
+            caption += f"\n\n💡 `.bcr {random.randint(2, 8)} {random.choice([4000, 8000, 11025])}`"
 
-        send_as = client.send_voice if target_message.voice else client.send_audio
-        await send_as(
-            chat_id=message.chat.id,
-            voice=output_path if target_message.voice else None,
-            audio=output_path if target_message.audio else None,
-            caption=caption
-        )
+        if target_message.voice:
+            await client.send_voice(
+                chat_id=message.chat.id,
+                voice=output_path,
+                caption=caption
+            )
+        elif target_message.audio:
+            await client.send_audio(
+                chat_id=message.chat.id,
+                audio=output_path,
+                caption=caption
+            )
 
         await status_message.delete()
 
@@ -88,7 +92,7 @@ async def bitcrush_command(client: Client, message: Message):
 def register_handlers(app: Client):
     bitcrush_handler = MessageHandler(
         bitcrush_command,
-        filters.command(["bitcrush", "bc"], prefixes=".")
+        filters.command(["bitcrush", "bcr"], prefixes=".")
     )
 
     handlers_list = [bitcrush_handler]
