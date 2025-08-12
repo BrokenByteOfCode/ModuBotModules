@@ -1,86 +1,91 @@
-import io
 import os
 import random
-import numpy as np
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
-from pydub import AudioSegment
 
 async def bitcrush_command(client: Client, message: Message):
+    process = await asyncio.create_subprocess_shell(
+        "ffmpeg -version",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    await process.communicate()
+    if process.returncode != 0:
+        await message.reply_text(
+            "🔴 **Помилка: `ffmpeg` не знайдено.**\n"
+            "Цей модуль вимагає встановленого `ffmpeg`.\n\n"
+            "Будь ласка, встановіть його на свій сервер:\n"
+            "`sudo apt update && sudo apt install ffmpeg`"
+        )
+        return
+
     if not message.reply_to_message or not (message.reply_to_message.audio or message.reply_to_message.voice):
-        await message.reply_text("Будь ласка, дайте відповідь на аудіо або голосове повідомлення, щоб застосувати ефект.")
+        await message.reply_text("Будь ласка, дайте відповідь на аудіо чи голосове повідомлення.")
         return
 
     target_message = message.reply_to_message
 
     try:
-
-        bit_depth = int(message.command[1]) if len(message.command) > 1 else 4
-
-        sample_rate = int(message.command[2]) if len(message.command) > 2 else 4000
-
-        if bit_depth <= 0 or sample_rate <= 0:
-            raise ValueError("Параметри мають бути додатними числами.")
-
+        bit_depth = int(message.command[1]) if len(message.command) > 1 else 8
+        sample_rate = int(message.command[2]) if len(message.command) > 2 else 8000
     except (ValueError, IndexError):
-        await message.reply_text(
-            "Неправильний формат параметрів. Використовую стандартні значення.\n"
-            "**Приклад:** `.bitcrush 8 8000`"
-        )
-        bit_depth = 4
-        sample_rate = 4000
+        bit_depth = 8
+        sample_rate = 8000
 
-    status_message = await message.reply_text(" crushing your audio... 👾")
+    ffmpeg_format = "u8" if bit_depth <= 8 else "s16"
+    actual_bit_depth = 8 if bit_depth <= 8 else 16
 
-    downloaded_file = None
+    status_message = await message.reply_text("👾 Застосовую `ffmpeg`... crushed...")
+
+    input_path = None
+    output_path = None
     try:
+        input_path = await client.download_media(target_message)
+        output_path = "downloads/bitcrushed.ogg"
 
-        downloaded_file = await client.download_media(target_message)
+        cmd = (
+            f'ffmpeg -y -i "{input_path}" '
+            f'-af "aformat=sample_fmts={ffmpeg_format},asetrate={sample_rate}" '
+            f'-c:a libopus "{output_path}"'
+        )
 
-        audio = AudioSegment.from_file(downloaded_file)
+        process = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
 
-        samples = np.array(audio.get_array_of_samples())
+        if process.returncode != 0:
 
-        shift_amount = (audio.sample_width * 8) - bit_depth
-        if shift_amount < 0:
-            shift_amount = 0
+            error_log = stderr.decode().strip()
+            await status_message.edit_text(f"❌ **Помилка ffmpeg:**\n\n`{error_log}`")
+            return
 
-        crushed_samples = (samples >> shift_amount) << shift_amount
+        caption = f"Crushed: {actual_bit_depth}-bit, {sample_rate}Hz"
+        if random.randint(1, 3) == 1:
+            caption += "\n\n💡 Ви можете використовувати `.bitcrush 8 8000`"
 
-        crushed_audio = audio._spawn(crushed_samples.tobytes())
-
-        final_audio = crushed_audio.set_frame_rate(sample_rate)
-
-        output_buffer = io.BytesIO()
-        output_buffer.name = "bitcrushed.ogg"
-        final_audio.export(output_buffer, format="ogg", codec="libopus")
-
-        caption = f"Bitcrush: {bit_depth}-bit, {sample_rate}Hz"
-        if random.randint(1, 3) == 1: 
-            caption += "\n\n💡 Ви можете спробувати: `.bitcrush 8 8000`"
-
-        if target_message.audio:
-            await client.send_audio(
-                chat_id=message.chat.id,
-                audio=output_buffer,
-                caption=caption
-            )
-        elif target_message.voice:
-            await client.send_voice(
-                chat_id=message.chat.id,
-                voice=output_buffer,
-                caption=caption
-            )
+        send_as = client.send_voice if target_message.voice else client.send_audio
+        await send_as(
+            chat_id=message.chat.id,
+            voice=output_path if target_message.voice else None,
+            audio=output_path if target_message.audio else None,
+            caption=caption
+        )
 
         await status_message.delete()
 
     except Exception as e:
-        await status_message.edit_text(f"❌ Сталася помилка під час обробки:\n`{e}`")
+        await status_message.edit_text(f"❌ **Сталася помилка в Python:**\n`{e}`")
     finally:
 
-        if downloaded_file and os.path.exists(downloaded_file):
-            os.remove(downloaded_file)
+        if input_path and os.path.exists(input_path):
+            os.remove(input_path)
+        if output_path and os.path.exists(output_path):
+            os.remove(output_path)
 
 def register_handlers(app: Client):
     bitcrush_handler = MessageHandler(
