@@ -26,7 +26,7 @@ async def update_progress(message: Message, step: str, current: int, total: int)
             progress_text += f"[ ] {step_name}\n"
     
     try:
-        await message.edit_text(f"**Bitcrush Processing:**\n```\n{progress_text}```")
+        await message.edit_text(f"**Bitcrush Processing:**\n{progress_text}")
     except:
         pass
 
@@ -47,32 +47,33 @@ async def bitcrush_audio(audio_path: str, output_path: str, bit_depth: int = 4, 
         frames = wav_file.readframes(-1)
         sample_width = wav_file.getsampwidth()
         channels = wav_file.getnchannels()
-        original_rate = wav_file.getframerate()
     
     if sample_width == 2:
         samples = struct.unpack('<' + 'h' * (len(frames) // 2), frames)
+        max_input = 32767
     else:
         samples = struct.unpack('<' + 'B' * len(frames), frames)
+        max_input = 127
     
     max_val = 2**(bit_depth - 1) - 1
     min_val = -2**(bit_depth - 1)
     
     crushed_samples = []
-    step = len(samples) // sample_rate if len(samples) > sample_rate else 1
+    downsample_step = max(1, len(samples) // (sample_rate * 2))
     
-    for i in range(0, len(samples), max(1, step)):
-        if i < len(samples):
-            normalized = samples[i] / (32767 if sample_width == 2 else 127)
-            quantized = round(normalized * max_val)
-            quantized = max(min_val, min(max_val, quantized))
-            crushed = int(quantized * (32767 if sample_width == 2 else 127) / max_val)
-            crushed_samples.append(crushed)
+    for i in range(0, len(samples), downsample_step):
+        sample = samples[i]
+        normalized = sample / max_input
+        quantized = round(normalized * max_val)
+        quantized = max(min_val, min(max_val, quantized))
+        crushed = int(quantized * max_input / max_val) if max_val > 0 else 0
+        crushed_samples.append(crushed)
     
     format_char = 'h' if sample_width == 2 else 'B'
     crushed_frames = struct.pack('<' + format_char * len(crushed_samples), *crushed_samples)
     
     with wave.open(output_path, 'wb') as out_wav:
-        out_wav.setnchannels(channels)
+        out_wav.setnchannels(1)
         out_wav.setsampwidth(sample_width)
         out_wav.setframerate(sample_rate)
         out_wav.writeframes(crushed_frames)
@@ -89,7 +90,7 @@ async def bitcrush_command(client: Client, message: Message):
         await message.reply_text("Please reply to audio, voice message or video note")
         return
     
-    status_msg = await message.reply_text("**Bitcrush Processing:**\n```\n[ ] Downloading Audio\n[ ] Processing Audio\n[ ] Applying Bitcrush\n[ ] Uploading Result\n```")
+    status_msg = await message.reply_text("**Bitcrush Processing:**\n[ ] Downloading Audio\n[ ] Processing Audio\n[ ] Applying Bitcrush\n[ ] Uploading Result")
     
     try:
         await update_progress(status_msg, "Downloading", 0, 4)
@@ -133,7 +134,7 @@ async def bitcrush_command(client: Client, message: Message):
                 reply_to_message_id=reply.id
             )
             
-            await status_msg.edit_text("**Bitcrush Processing:**\n```\n[✓] Downloading Audio\n[✓] Processing Audio\n[✓] Applying Bitcrush\n[✓] Uploading Result\n```\n\n✅ **Complete!**")
+            await status_msg.edit_text("**Bitcrush Processing:**\n[✓] Downloading Audio\n[✓] Processing Audio\n[✓] Applying Bitcrush\n[✓] Uploading Result\n\n✅ **Complete!**")
             
     except Exception as e:
         await status_msg.edit_text(f"❌ Error: {str(e)}")
@@ -141,7 +142,7 @@ async def bitcrush_command(client: Client, message: Message):
 def register_handlers(app: Client):
     bitcrush_handler = MessageHandler(
         bitcrush_command,
-        filters.command(["bitcrush", "bcr"], prefixes=".")
+        filters.command(["bitcrush", "bcr"], prefixes=".") & filters.me
     )
     
     handlers_list = [bitcrush_handler]
