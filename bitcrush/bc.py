@@ -1,5 +1,4 @@
 import os
-import io
 import random
 import asyncio
 import numpy as np
@@ -10,7 +9,6 @@ from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
 
 async def bitcrush_command(client: Client, message: Message):
-
     process = await asyncio.create_subprocess_shell("ffmpeg -version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     await process.communicate()
     if process.returncode != 0:
@@ -33,13 +31,24 @@ async def bitcrush_command(client: Client, message: Message):
     status_message = await message.reply_text("👾 crunching...")
 
     input_path = None
-    wav_path = f"downloads/{message.id}.wav"
+
+    temp_wav_path = f"downloads/{message.id}_input.wav"
+    processed_wav_path = f"downloads/{message.id}_processed.wav"
     output_path = f"downloads/{message.id}.ogg"
 
     try:
         input_path = await client.download_media(target_message)
 
-        audio_data, original_rate = sf.read(input_path)
+        convert_to_wav_cmd = f'ffmpeg -y -i "{input_path}" "{temp_wav_path}"'
+        p_convert_in = await asyncio.create_subprocess_shell(convert_to_wav_cmd, stderr=asyncio.subprocess.PIPE)
+        _, stderr_convert_in = await p_convert_in.communicate()
+        if p_convert_in.returncode != 0:
+
+            if input_path != temp_wav_path:
+                os.remove(input_path)
+            raise RuntimeError(f"FFmpeg (input conversion) error: {stderr_convert_in.decode()}")
+
+        audio_data, original_rate = sf.read(temp_wav_path)
 
         if audio_data.ndim > 1:
             audio_data = audio_data.mean(axis=1)
@@ -50,13 +59,13 @@ async def bitcrush_command(client: Client, message: Message):
         num_levels = 2 ** bit_depth
         crushed_data = np.round(resampled_data * (num_levels - 1)) / (num_levels - 1)
 
-        sf.write(wav_path, crushed_data, target_rate)
+        sf.write(processed_wav_path, crushed_data, target_rate)
 
-        convert_cmd = f'ffmpeg -y -i "{wav_path}" -c:a libopus "{output_path}"'
-        p_convert = await asyncio.create_subprocess_shell(convert_cmd, stderr=asyncio.subprocess.PIPE)
-        _, stderr_convert = await p_convert.communicate()
-        if p_convert.returncode != 0:
-            raise RuntimeError(f"FFmpeg (convert) error: {stderr_convert.decode()}")
+        convert_to_ogg_cmd = f'ffmpeg -y -i "{processed_wav_path}" -c:a libopus "{output_path}"'
+        p_convert_out = await asyncio.create_subprocess_shell(convert_to_ogg_cmd, stderr=asyncio.subprocess.PIPE)
+        _, stderr_convert_out = await p_convert_out.communicate()
+        if p_convert_out.returncode != 0:
+            raise RuntimeError(f"FFmpeg (output conversion) error: {stderr_convert_out.decode()}")
 
         caption = f"Crushed: {bit_depth}-bit, {target_rate}Hz"
         if random.randint(1, 3) == 1:
@@ -74,7 +83,8 @@ async def bitcrush_command(client: Client, message: Message):
     finally:
 
         if input_path and os.path.exists(input_path): os.remove(input_path)
-        if wav_path and os.path.exists(wav_path): os.remove(wav_path)
+        if temp_wav_path and os.path.exists(temp_wav_path): os.remove(temp_wav_path)
+        if processed_wav_path and os.path.exists(processed_wav_path): os.remove(processed_wav_path)
         if output_path and os.path.exists(output_path): os.remove(output_path)
 
 def register_handlers(app: Client):
