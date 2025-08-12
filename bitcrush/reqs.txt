@@ -1,4 +1,3 @@
-pydub
 numpy
+soundfile
 scipy
-audioop-lts

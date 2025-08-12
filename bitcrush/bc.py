@@ -3,35 +3,20 @@ import io
 import random
 import asyncio
 import numpy as np
+import soundfile as sf
 import scipy.signal
-from pydub import AudioSegment
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
 
-def apply_crunch_effect(audio_segment, bit_depth, target_rate):
-    if audio_segment.channels > 1:
-        audio_segment = audio_segment.set_channels(1)
-
-    original_rate = audio_segment.frame_rate
-    raw_data = np.array(audio_segment.get_array_of_samples(), dtype=np.int16)
-
-    num_samples = int(len(raw_data) * (target_rate / original_rate))
-    resampled_data = scipy.signal.resample(raw_data, num_samples)
-
-    shift_amount = 16 - bit_depth
-    crushed_data = (resampled_data.astype(np.int16) >> shift_amount) << shift_amount
-
-    crushed_audio = AudioSegment(
-        crushed_data.tobytes(),
-        frame_rate=target_rate,
-        sample_width=2,  
-        channels=1
-    )
-
-    return crushed_audio
-
 async def bitcrush_command(client: Client, message: Message):
+
+    process = await asyncio.create_subprocess_shell("ffmpeg -version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    await process.communicate()
+    if process.returncode != 0:
+        await message.reply_text("🔴 **Помилка: `ffmpeg` не знайдено.**\nВстановіть його на сервер: `sudo apt install ffmpeg`")
+        return
+
     if not message.reply_to_message or not (message.reply_to_message.audio or message.reply_to_message.voice):
         await message.reply_text("Дай відповідь на аудіо чи голосове повідомлення.")
         return
@@ -48,33 +33,49 @@ async def bitcrush_command(client: Client, message: Message):
     status_message = await message.reply_text("👾 crunching...")
 
     input_path = None
+    wav_path = f"downloads/{message.id}.wav"
+    output_path = f"downloads/{message.id}.ogg"
+
     try:
         input_path = await client.download_media(target_message)
 
-        audio = AudioSegment.from_file(input_path)
+        audio_data, original_rate = sf.read(input_path)
 
-        processed_audio = apply_crunch_effect(audio, bit_depth, target_rate)
+        if audio_data.ndim > 1:
+            audio_data = audio_data.mean(axis=1)
 
-        output_buffer = io.BytesIO()
-        output_buffer.name = "crunched.ogg"
-        processed_audio.export(output_buffer, format="ogg", codec="libopus")
+        num_samples = int(len(audio_data) * (target_rate / original_rate))
+        resampled_data = scipy.signal.resample(audio_data, num_samples)
+
+        num_levels = 2 ** bit_depth
+        crushed_data = np.round(resampled_data * (num_levels - 1)) / (num_levels - 1)
+
+        sf.write(wav_path, crushed_data, target_rate)
+
+        convert_cmd = f'ffmpeg -y -i "{wav_path}" -c:a libopus "{output_path}"'
+        p_convert = await asyncio.create_subprocess_shell(convert_cmd, stderr=asyncio.subprocess.PIPE)
+        _, stderr_convert = await p_convert.communicate()
+        if p_convert.returncode != 0:
+            raise RuntimeError(f"FFmpeg (convert) error: {stderr_convert.decode()}")
 
         caption = f"Crushed: {bit_depth}-bit, {target_rate}Hz"
         if random.randint(1, 3) == 1:
             caption += f"\n\n💡 `.bcr {random.randint(2, 6)} {random.choice([4000, 6000, 8000])}`"
 
         if target_message.voice:
-            await client.send_voice(chat_id=message.chat.id, voice=output_buffer, caption=caption)
+            await client.send_voice(chat_id=message.chat.id, voice=output_path, caption=caption)
         elif target_message.audio:
-            await client.send_audio(chat_id=message.chat.id, audio=output_buffer, caption=caption)
+            await client.send_audio(chat_id=message.chat.id, audio=output_path, caption=caption)
 
         await status_message.delete()
 
     except Exception as e:
         await status_message.edit_text(f"❌ **Помилка:**\n`{e}`")
     finally:
-        if input_path and os.path.exists(input_path):
-            os.remove(input_path)
+
+        if input_path and os.path.exists(input_path): os.remove(input_path)
+        if wav_path and os.path.exists(wav_path): os.remove(wav_path)
+        if output_path and os.path.exists(output_path): os.remove(output_path)
 
 def register_handlers(app: Client):
     bitcrush_handler = MessageHandler(
