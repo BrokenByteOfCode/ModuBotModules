@@ -4,17 +4,10 @@ from pyrogram.types import Message
 import os
 import tempfile
 import asyncio
-import wave
-import struct
 import subprocess
 
-async def update_progress(message: Message, step: str, current: int, total: int):
-    steps = [
-        "Downloading Audio",
-        "Processing Audio", 
-        "Applying Bitcrush",
-        "Uploading Result"
-    ]
+async def update_progress(message: Message, current: int):
+    steps = ["Downloading Audio", "Processing Audio", "Applying Bitcrush", "Uploading Result"]
     
     progress_text = ""
     for i, step_name in enumerate(steps):
@@ -30,55 +23,24 @@ async def update_progress(message: Message, step: str, current: int, total: int)
     except:
         pass
 
-async def convert_to_wav(input_path: str, output_path: str):
+async def run_ffmpeg(cmd):
     process = await asyncio.create_subprocess_exec(
-        'ffmpeg', '-i', input_path, '-y', output_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        *cmd,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        limit=1024*1024
     )
-    await process.communicate()
-
-async def bitcrush_audio(audio_path: str, output_path: str, bit_depth: int = 4, sample_rate: int = 8000):
-    temp_wav = audio_path.replace('.', '_temp.') + '.wav'
     
-    await convert_to_wav(audio_path, temp_wav)
-    
-    with wave.open(temp_wav, 'rb') as wav_file:
-        frames = wav_file.readframes(-1)
-        sample_width = wav_file.getsampwidth()
-        channels = wav_file.getnchannels()
-    
-    if sample_width == 2:
-        samples = struct.unpack('<' + 'h' * (len(frames) // 2), frames)
-        max_input = 32767
-    else:
-        samples = struct.unpack('<' + 'B' * len(frames), frames)
-        max_input = 127
-    
-    max_val = 2**(bit_depth - 1) - 1
-    min_val = -2**(bit_depth - 1)
-    
-    crushed_samples = []
-    downsample_step = max(1, len(samples) // (sample_rate * 2))
-    
-    for i in range(0, len(samples), downsample_step):
-        sample = samples[i]
-        normalized = sample / max_input
-        quantized = round(normalized * max_val)
-        quantized = max(min_val, min(max_val, quantized))
-        crushed = int(quantized * max_input / max_val) if max_val > 0 else 0
-        crushed_samples.append(crushed)
-    
-    format_char = 'h' if sample_width == 2 else 'B'
-    crushed_frames = struct.pack('<' + format_char * len(crushed_samples), *crushed_samples)
-    
-    with wave.open(output_path, 'wb') as out_wav:
-        out_wav.setnchannels(1)
-        out_wav.setsampwidth(sample_width)
-        out_wav.setframerate(sample_rate)
-        out_wav.writeframes(crushed_frames)
-    
-    os.remove(temp_wav)
+    try:
+        await asyncio.wait_for(process.wait(), timeout=30.0)
+        return process.returncode == 0
+    except asyncio.TimeoutError:
+        try:
+            process.terminate()
+            await asyncio.wait_for(process.wait(), timeout=5.0)
+        except:
+            process.kill()
+        return False
 
 async def bitcrush_command(client: Client, message: Message):
     if not message.reply_to_message:
@@ -92,52 +54,67 @@ async def bitcrush_command(client: Client, message: Message):
     
     status_msg = await message.reply_text("**Bitcrush Processing:**\n[ ] Downloading Audio\n[ ] Processing Audio\n[ ] Applying Bitcrush\n[ ] Uploading Result")
     
+    temp_dir = None
+    
     try:
-        await update_progress(status_msg, "Downloading", 0, 4)
+        temp_dir = tempfile.mkdtemp()
         
-        with tempfile.TemporaryDirectory() as temp_dir:
-            if reply.audio:
-                file_path = await client.download_media(reply.audio, file_name=os.path.join(temp_dir, "input.mp3"))
-            elif reply.voice:
-                file_path = await client.download_media(reply.voice, file_name=os.path.join(temp_dir, "input.ogg"))
-            else:
-                file_path = await client.download_media(reply.video_note, file_name=os.path.join(temp_dir, "input.mp4"))
-            
-            await update_progress(status_msg, "Processing", 1, 4)
-            await asyncio.sleep(0.5)
-            
-            output_path = os.path.join(temp_dir, "bitcrushed.wav")
-            
-            await update_progress(status_msg, "Applying", 2, 4)
-            
-            bit_depth = 4
-            sample_rate = 8000
-            
-            if len(message.command) > 1:
-                try:
-                    params = message.command[1].split()
-                    if len(params) >= 1:
-                        bit_depth = max(1, min(16, int(params[0])))
-                    if len(params) >= 2:
-                        sample_rate = max(1000, min(48000, int(params[1])))
-                except:
-                    pass
-            
-            await bitcrush_audio(file_path, output_path, bit_depth, sample_rate)
-            
-            await update_progress(status_msg, "Uploading", 3, 4)
-            
-            await client.send_audio(
-                chat_id=message.chat.id,
-                audio=output_path,
-                caption=f"🎵 Bitcrushed (Depth: {bit_depth}bit, Rate: {sample_rate}Hz)",
-                reply_to_message_id=reply.id
-            )
-            
-            await status_msg.edit_text("**Bitcrush Processing:**\n[✓] Downloading Audio\n[✓] Processing Audio\n[✓] Applying Bitcrush\n[✓] Uploading Result\n\n✅ **Complete!**")
-            
+        await update_progress(status_msg, 0)
+        
+        if reply.audio:
+            file_path = await client.download_media(reply.audio, file_name=os.path.join(temp_dir, "input.mp3"))
+        elif reply.voice:
+            file_path = await client.download_media(reply.voice, file_name=os.path.join(temp_dir, "input.ogg"))
+        else:
+            file_path = await client.download_media(reply.video_note, file_name=os.path.join(temp_dir, "input.mp4"))
+        
+        await update_progress(status_msg, 1)
+        
+        sample_rate = 8000
+        if len(message.command) > 1:
+            try:
+                sample_rate = max(1000, min(22050, int(message.command[1])))
+            except:
+                pass
+        
+        await update_progress(status_msg, 2)
+        
+        output_path = os.path.join(temp_dir, "bitcrushed.ogg")
+        
+        cmd = [
+            'ffmpeg', '-i', file_path,
+            '-af', f'aresample={sample_rate}:resampler=soxr,volume=0.7',
+            '-ar', str(sample_rate),
+            '-ac', '1',
+            '-ab', '32k',
+            '-y', output_path
+        ]
+        
+        success = await run_ffmpeg(cmd)
+        
+        if not success or not os.path.exists(output_path):
+            raise Exception("Audio processing failed")
+        
+        await update_progress(status_msg, 3)
+        
+        await client.send_audio(
+            chat_id=message.chat.id,
+            audio=output_path,
+            caption=f"🎵 Bitcrushed ({sample_rate}Hz)",
+            reply_to_message_id=reply.id
+        )
+        
+        await status_msg.edit_text("**Bitcrush Processing:**\n[✓] Downloading Audio\n[✓] Processing Audio\n[✓] Applying Bitcrush\n[✓] Uploading Result\n\n✅ **Complete!**")
+        
     except Exception as e:
         await status_msg.edit_text(f"❌ Error: {str(e)}")
+    finally:
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
 
 def register_handlers(app: Client):
     bitcrush_handler = MessageHandler(
@@ -145,9 +122,4 @@ def register_handlers(app: Client):
         filters.command(["bitcrush", "bcr"], prefixes=".") & filters.me
     )
     
-    handlers_list = [bitcrush_handler]
-    
-    for handler in handlers_list:
-        app.add_handler(handler)
-        
-    return handlers_list
+    return [bitcrush_handler]
