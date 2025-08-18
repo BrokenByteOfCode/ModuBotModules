@@ -226,7 +226,7 @@ async def ascii_command(client: Client, message: Message):
         simple_ascii = f"```\n{text.upper()}\n{'=' * len(text)}\n```"
         await message.reply_text(simple_ascii, parse_mode=ParseMode.MARKDOWN)
 
-async def improved_uwu_command(client: Client, message: Message):
+async def uwu_command(client: Client, message: Message):
     if len(message.command) < 2:
         return await message.reply_text("Вкажіть текст для UwU певетвовення >w<")
 
