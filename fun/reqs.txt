@@ -1,1 +1,3 @@
 gtts
+google-generativeai
+python-dotenv
