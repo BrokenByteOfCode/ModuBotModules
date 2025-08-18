@@ -6,6 +6,7 @@ from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
 from pyrogram.enums import ParseMode
+from art import text2art
 
 async def fun_help_command(client: Client, message: Message):
     help_text = """
@@ -34,6 +35,11 @@ async def fun_help_command(client: Client, message: Message):
 `.hug` - (у відповідь) Обіймає користувача.
 `.dice` - Кидає звичайний кубик (1-6).
 `.percent [що саме]` - Показує випадковий відсоток чогось.
+
+**🎭 RP Команди (працюють по тексту):**
+Напиши просто: кусьнути, вдарити, поцілувати, обійняти, покарати, домінувати, 
+змусити, трахнути, вбити, лизнути, погладити, шльопнути, задушити, знищити, 
+розірвати, роздавити, спалити, заморозити, вкрасти, пограбувати та багато іншого!
 """
     await message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
 
@@ -204,11 +210,21 @@ async def ascii_command(client: Client, message: Message):
         return await message.reply_text("Вкажіть текст для ASCII перетворення.")
     
     text = message.text.split(maxsplit=1)[1]
-    if len(text) > 20:
-        return await message.reply_text("Текст занадто довгий! Максимум 20 символів.")
+    if len(text) > 15:
+        return await message.reply_text("Текст занадто довгий! Максимум 15 символів.")
     
-    ascii_art = f"```\n{text.upper()}\n{'=' * len(text)}\n```"
-    await message.reply_text(ascii_art, parse_mode=ParseMode.MARKDOWN)
+    try:
+        fonts = ['small', 'block', 'digital', '3-d', 'mini', 'script', 'slant']
+        font = random.choice(fonts)
+        ascii_art = text2art(text, font=font)
+        
+        if len(ascii_art) > 4000:
+            ascii_art = text2art(text, font='mini')
+        
+        await message.reply_text(f"```\n{ascii_art}\n```", parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        simple_ascii = f"```\n{text.upper()}\n{'=' * len(text)}\n```"
+        await message.reply_text(simple_ascii, parse_mode=ParseMode.MARKDOWN)
 
 async def uwu_command(client: Client, message: Message):
     if len(message.command) < 2:
@@ -321,6 +337,73 @@ async def percent_command(client: Client, message: Message):
     
     await message.reply_text(f"📊 {item}: **{percentage}%**", parse_mode=ParseMode.MARKDOWN)
 
+async def rp_action_handler(client: Client, message: Message):
+    if not message.reply_to_message:
+        return
+    
+    lines = message.text.strip().split('\n')
+    first_line = lines[0].lower().strip()
+    
+    actor = message.from_user.first_name
+    target = message.reply_to_message.from_user.first_name
+    
+    rp_actions = {
+        "кусьнути": ("🦷", ["укусив", "кусьнув", "вкусив", "прикусив"]),
+        "вдарити": ("👊", ["вдарив", "залупив", "дав в пику", "шарахнув"]),
+        "поцілувати": ("💋", ["поцілував", "чмокнув", "дав поцілунок", "поцілував в губи"]),
+        "обійняти": ("🤗", ["обійняв", "притиснув до себе", "міцно обійняв"]),
+        "покарати": ("⚡", ["покарав", "наказав", "дав урок", "виховав"]),
+        "домінувати": ("👑", ["домінував над", "підкорив", "керував", "панував над"]),
+        "змусити": ("⛓️", ["змусив", "приневолив", "примусив", "наказав"]),
+        "трахнути": ("🔞", ["трахнув", "використав", "взяв", "відімів"]),
+        "вбити": ("💀", ["вбив", "прикінчив", "знищив", "убив"]),
+        "лизнути": ("👅", ["лизнув", "облизав", "язиком провів"]),
+        "погладити": ("✋", ["погладив", "провів рукою", "приласкав"]),
+        "шльопнути": ("👋", ["шльопнув", "дав ляпаса", "ударив долонею"]),
+        "задушити": ("🤐", ["задушив", "стиснув горло", "почав душити"]),
+        "знищити": ("💥", ["знищив", "розніс", "стер з лиця землі"]),
+        "розірвати": ("💢", ["розірвав", "розшматував", "порвав на шматки"]),
+        "роздавити": ("🗿", ["роздавив", "розплющив", "стиснув"]),
+        "спалити": ("🔥", ["спалив", "підпалив", "обпік", "обгорів"]),
+        "заморозити": ("❄️", ["заморозив", "покрив льодом", "скував холодом"]),
+        "вкрасти": ("🦹", ["вкрав", "поцупив", "украв", "забрав"]),
+        "пограбувати": ("💰", ["пограбував", "обібрав", "обчистив"]),
+        "лягати": ("🛏️", ["ліг на", "завалився на", "притиснув"]),
+        "сісти": ("💺", ["сів на", "присів на", "розташувався на"]),
+        "взяти": ("✊", ["взяв", "схопив", "захопив", "підхопив"]),
+        "кинути": ("🎯", ["кинув", "швырнув", "метнув", "запустив"]),
+        "штовхнути": ("👐", ["штовхнув", "пхнув", "відштовхнув"]),
+        "потягнути": ("🤜", ["потягнув", "витягнув", "потяг за собою"]),
+        "підняти": ("🏋️", ["підняв", "підтягнув", "витяг", "піднімав"]),
+        "кидати": ("💥", ["кидав", "метав", "швиряв у"]),
+        "відлупити": ("🥊", ["відлупив", "відмутузив", "відтузив"]),
+        "мордувати": ("😤", ["мордував", "бив по морді", "зрив башню"]),
+        "хапати": ("👺", ["хапав", "хватав", "ловив", "тримав"]),
+        "кусати": ("🦈", ["кусав", "гриз", "жував"]),
+        "душити": ("🤫", ["душив", "стискав шию", "не давав дихати"]),
+        "рвати": ("🌪️", ["рвав", "шматував", "розривав"]),
+        "палити": ("🔥", ["палив", "підпалював", "жарив"]),
+        "морозити": ("🧊", ["морозив", "студив", "охолоджував"])
+    }
+    
+    for keyword, (emoji, actions) in rp_actions.items():
+        if keyword in first_line:
+            action = random.choice(actions)
+            response_text = f"{emoji} **{actor}** {action} **{target}**!"
+            
+            rest_text = first_line.replace(keyword, '').strip()
+            if len(lines) > 1:
+                additional_text = '\n'.join(lines[1:]).strip()
+                if rest_text:
+                    response_text += f", кажучи \"{rest_text} {additional_text}\""
+                elif additional_text:
+                    response_text += f", кажучи \"{additional_text}\""
+            elif rest_text:
+                response_text += f", кажучи \"{rest_text}\""
+            
+            await message.reply_text(response_text, parse_mode=ParseMode.MARKDOWN)
+            return
+
 def register_handlers(app: Client):
     handlers_list = [
         MessageHandler(fun_help_command, filters.command("funhelp", prefixes=".")),
@@ -343,10 +426,9 @@ def register_handlers(app: Client):
         MessageHandler(fortune_command, filters.command("fortune", prefixes=".")),
         MessageHandler(rate_command, filters.command("rate", prefixes=".")),
         MessageHandler(vibe_command, filters.command("vibe", prefixes=".")),
-        MessageHandler(slap_command, filters.command("slap", prefixes=".")),
-        MessageHandler(hug_command, filters.command("hug", prefixes=".")),
         MessageHandler(dice_command, filters.command("dice", prefixes=".")),
-        MessageHandler(percent_command, filters.command("percent", prefixes="."))
+        MessageHandler(percent_command, filters.command("percent", prefixes=".")),
+        MessageHandler(rp_action_handler, filters.text & filters.reply)
     ]
     for handler in handlers_list:
         app.add_handler(handler)
