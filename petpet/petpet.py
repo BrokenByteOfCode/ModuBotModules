@@ -55,7 +55,7 @@ async def pet_command(client: Client, message: Message):
 def register_handlers(app: Client):
     pet_handler = MessageHandler(
         pet_command,
-        filters.command("pet", prefixes=".") & filters.me
+        filters.command("pet", prefixes=".")
     )
     handlers_list = [pet_handler]
     for handler in handlers_list:
