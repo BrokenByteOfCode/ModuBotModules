@@ -245,6 +245,13 @@ async def typing_command(client: Client, message: Message):
 
 async def fortune_command(client: Client, message: Message):
     fortunes = [
+        "Сьогодні тебе чекає приємний сюрприз!",
+        "Зустрінеш старого друга в несподіваному місці.",
+        "Твоя впевненість відкриє нові можливості.",
+        "Час для творчості! Твої ідеї знайдуть втілення.",
+        "Будь обережний з фінансами цього тижня.",
+        "Любов постукає у твої двері найближчим часом.",
+        "Відпочинок принесе неочікувані відкриття.",
         "Твої зусилля нарешті будуть винагороджені.",
         "Вбий себе.",
         "Чи тобі колись казали, що ти тупий? Ти тупий.",
@@ -293,42 +300,6 @@ async def vibe_command(client: Client, message: Message):
     
     emoji, mood, description = random.choice(vibes)
     await message.reply_text(f"{emoji} **Твій настрій сьогодні:** {mood}\n{description}", parse_mode=ParseMode.MARKDOWN)
-
-async def slap_command(client: Client, message: Message):
-    if not message.reply_to_message:
-        return await message.reply_text("Цю команду потрібно використовувати у відповідь на повідомлення.")
-    
-    target = message.reply_to_message.from_user.first_name
-    slapper = message.from_user.first_name
-    
-    actions = [
-        f"дав ляпаса",
-        f"легенько вдарив",
-        f"шльопнув",
-        f"дав п'ять по обличчю",
-        f"провів виховну бесіду кулаком"
-    ]
-    
-    action = random.choice(actions)
-    await message.reply_text(f"👋 **{slapper}** {action} **{target}**!", parse_mode=ParseMode.MARKDOWN)
-
-async def hug_command(client: Client, message: Message):
-    if not message.reply_to_message:
-        return await message.reply_text("Цю команду потрібно використовувати у відповідь на повідомлення.")
-    
-    target = message.reply_to_message.from_user.first_name
-    hugger = message.from_user.first_name
-    
-    actions = [
-        f"міцно обійняв",
-        f"тепло обійняв",
-        f"дружньо обійняв",
-        f"ніжно обійняв",
-        f"по-братськи обійняв"
-    ]
-    
-    action = random.choice(actions)
-    await message.reply_text(f"🤗 **{hugger}** {action} **{target}**!", parse_mode=ParseMode.MARKDOWN)
 
 async def dice_command(client: Client, message: Message):
     result = random.randint(1, 6)
