@@ -27,7 +27,6 @@ async def fun_help_command(client: Client, message: Message):
 `.slot` - Спробуй удачу в слот-машині.
 `.ascii [текст]` - Перетворює текст в ASCII арт.
 `.uwu [текст]` - Перетворює текст в UwU стиль.
-`.typing` - Демонструє швидкість друку.
 `.fortune` - Отримай випадкове пророцтво.
 `.rate [об'єкт]` - Оцінює щось від 1 до 10.
 `.vibe` - Перевіряє твій сьогоднішній настрій.
@@ -236,13 +235,6 @@ async def uwu_command(client: Client, message: Message):
     
     await message.reply_text(uwu_text)
 
-async def typing_command(client: Client, message: Message):
-    start_time = time.time()
-    test_message = await message.reply_text("Напиши 'готово' коли побачиш це повідомлення!")
-    
-    wpm = random.randint(20, 120)
-    await message.reply_text(f"⌨️ Твоя швидкість друку: **{wpm} WPM**", parse_mode=ParseMode.MARKDOWN)
-
 async def fortune_command(client: Client, message: Message):
     fortunes = [
         "Сьогодні тебе чекає приємний сюрприз!",
@@ -400,7 +392,6 @@ def register_handlers(app: Client):
         MessageHandler(slot_command, filters.command("slot", prefixes=".")),
         MessageHandler(ascii_command, filters.command("ascii", prefixes=".")),
         MessageHandler(uwu_command, filters.command("uwu", prefixes=".")),
-        MessageHandler(typing_command, filters.command("typing", prefixes=".")),
         MessageHandler(fortune_command, filters.command("fortune", prefixes=".")),
         MessageHandler(rate_command, filters.command("rate", prefixes=".")),
         MessageHandler(vibe_command, filters.command("vibe", prefixes=".")),
