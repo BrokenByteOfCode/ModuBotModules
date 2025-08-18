@@ -16,6 +16,13 @@ from pyrogram.enums import ParseMode
 dotenv.load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+if GEMINI_API_KEY:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        print(f"ПОМИЛКА: Не вдалося налаштувати Gemini API: {e}")
+        GEMINI_API_KEY = None 
+
 async def fun_help_command(client: Client, message: Message):
     help_text = """
 **🥳 Доступні Fun-команди:**
@@ -29,6 +36,69 @@ async def fun_help_command(client: Client, message: Message):
 `.ship` - (у відповідь на повідомлення) Перевіряє любовну сумісність.
 """
     await message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
+
+async def tts_command(client: Client, message: Message):
+    if len(message.command) < 2:
+        return await message.reply_text("Вкажіть текст для озвучення.")
+
+    text_to_speak = message.text.split(maxsplit=1)[1]
+    status_message = await message.reply_text("🎙️ Обробка запиту...")
+
+    if GEMINI_API_KEY:
+        try:
+            await status_message.edit_text("🎙️ Генерую аудіо через **Gemini API**...", parse_mode=ParseMode.MARKDOWN)
+
+            model = genai.GenerativeModel(model_name="gemini-2.5-flash-preview-tts")
+
+            voices = ["Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe"]
+
+            response = model.generate_content(
+                contents=f"Say cheerfully: {text_to_speak}",
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name=random.choice(voices),
+                            )
+                        )
+                    ),
+                )
+            )
+
+            pcm_data = response.candidates[0].content.parts[0].inline_data.data
+
+            audio_fp = io.BytesIO()
+            with wave.open(audio_fp, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(24000)
+                wf.writeframes(pcm_data)
+            audio_fp.seek(0)
+            audio_fp.name = "gemini_voice.wav"
+
+            await client.send_voice(message.chat.id, voice=audio_fp, reply_to_message_id=message.id)
+            await status_message.delete()
+            return
+
+        except Exception as e:
+            await status_message.edit_text(f"⚠️ Помилка Gemini API: `{e}`\n\n🔄 Спробую через gTTS...")
+
+    try:
+        if not GEMINI_API_KEY:
+            await status_message.edit_text("🔑 API ключ Gemini не знайдено.\n🎙️ Генерую аудіо через **gTTS**...", parse_mode=ParseMode.MARKDOWN)
+
+        audio_fp = io.BytesIO()
+        tts = gTTS(text=text_to_speak, lang='uk')
+        tts.write_to_fp(audio_fp)
+        audio_fp.seek(0)
+        audio_fp.name = 'gtts_voice.ogg'
+
+        await client.send_voice(message.chat.id, voice=audio_fp, reply_to_message_id=message.id)
+        await status_message.delete()
+
+    except Exception as e:
+        await status_message.edit_text(f"❌ Виникла помилка під час генерації аудіо: {e}")
 
 async def dicksize_command(client: Client, message: Message):
     size = random.randint(1, 35)
@@ -48,71 +118,6 @@ async def rng_command(client: Client, message: Message):
         f"🎲 Випадкове число від {min_val} до {max_val}: **{random_number}**",
         parse_mode=ParseMode.MARKDOWN
     )
-
-async def tts_command(client: Client, message: Message):
-    if len(message.command) < 2:
-        return await message.reply_text("Вкажіть текст для озвучення.")
-
-    text_to_speak = message.text.split(maxsplit=1)[1]
-    status_message = await message.reply_text("🎙️ Обробка запиту...")
-
-    if GEMINI_API_KEY:
-        try:
-            await status_message.edit_text("🎙️ Генерую аудіо через **Gemini API**...")
-
-            genai.configure(api_key=GEMINI_API_KEY)
-
-            voices = ["Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe"]
-
-            response = genai.models.generate_content(
-                model="gemini-2.5-flash-preview-tts",
-                contents=f"Say cheerfully: {text_to_speak}",
-                config=types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name=random.choice(voices),
-                            )
-                        )
-                    ),
-                )
-            )
-
-            pcm_data = response.candidates[0].content.parts[0].inline_data.data
-
-            audio_fp = io.BytesIO()
-            with wave.open(audio_fp, "wb") as wf:
-                wf.setnchannels(1)  
-                wf.setsampwidth(2)  
-                wf.setframerate(24000) 
-                wf.writeframes(pcm_data)
-            audio_fp.seek(0)
-            audio_fp.name = "gemini_voice.wav"
-
-            await client.send_voice(message.chat.id, voice=audio_fp, reply_to_message_id=message.id)
-            await status_message.delete()
-            return
-
-        except Exception as e:
-
-            await status_message.edit_text(f"⚠️ Помилка Gemini API: `{e}`\n\n🔄 Спробую через gTTS...")
-
-    try:
-        if not GEMINI_API_KEY:
-            await status_message.edit_text("🔑 API ключ Gemini не знайдено.\n🎙️ Генерую аудіо через **gTTS**...")
-
-        audio_fp = io.BytesIO()
-        tts = gTTS(text=text_to_speak, lang='uk')
-        tts.write_to_fp(audio_fp)
-        audio_fp.seek(0)
-        audio_fp.name = 'gtts_voice.ogg'
-
-        await client.send_voice(message.chat.id, voice=audio_fp, reply_to_message_id=message.id)
-        await status_message.delete()
-
-    except Exception as e:
-        await status_message.edit_text(f"❌ Виникла помилка під час генерації аудіо: {e}")
 
 async def coin_command(client: Client, message: Message):
     await message.reply_text(
