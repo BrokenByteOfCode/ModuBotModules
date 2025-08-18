@@ -226,14 +226,36 @@ async def ascii_command(client: Client, message: Message):
         simple_ascii = f"```\n{text.upper()}\n{'=' * len(text)}\n```"
         await message.reply_text(simple_ascii, parse_mode=ParseMode.MARKDOWN)
 
-async def uwu_command(client: Client, message: Message):
+async def improved_uwu_command(client: Client, message: Message):
     if len(message.command) < 2:
-        return await message.reply_text("Вкажіть текст для UwU перетворення.")
-    
+        return await message.reply_text("Вкажіть текст для UwU певетвовення >w<")
+
     text = message.text.split(maxsplit=1)[1]
-    uwu_text = text.replace('r', 'w').replace('R', 'W').replace('л', 'в').replace('Л', 'В')
-    uwu_text += " " + random.choice(['uwu', 'owo', '>w<', 'uwu~', 'owo~'])
+
+    replacements = {
+        'л': 'в', 'Л': 'В',
+        'р': 'в', 'Р': 'В',
+        'на': 'ня', 'На': 'Ня',
+        'но': 'ньо', 'Но': 'Ньо'
+    }
+
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+
+    words = text.split(' ')
+    uwu_words = []
+    for word in words:
+        if len(word) > 2 and random.random() < 0.2:
+            stutter = f"{word[0]}-{word}"
+            uwu_words.append(stutter)
+        else:
+            uwu_words.append(word)
     
+    uwu_text = " ".join(uwu_words)
+
+    suffixes = ['uwu', 'owo', '>w<', 'uwu~', 'owo~', '^w^', 'ня~', '(´｡• ω •｡`)']
+    uwu_text += " " + random.choice(suffixes)
+
     await message.reply_text(uwu_text)
 
 async def typing_command(client: Client, message: Message):
