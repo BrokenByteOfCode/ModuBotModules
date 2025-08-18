@@ -6,7 +6,6 @@ import dotenv
 from gtts import gTTS
 
 import google.generativeai as genai
-from google.generativeai import types
 
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
@@ -21,7 +20,7 @@ if GEMINI_API_KEY:
         genai.configure(api_key=GEMINI_API_KEY)
     except Exception as e:
         print(f"ПОМИЛКА: Не вдалося налаштувати Gemini API: {e}")
-        GEMINI_API_KEY = None 
+        GEMINI_API_KEY = None
 
 async def fun_help_command(client: Client, message: Message):
     help_text = """
@@ -52,18 +51,20 @@ async def tts_command(client: Client, message: Message):
 
             voices = ["Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe"]
 
+            generation_config = {
+                "response_modalities": ["AUDIO"],
+                "speech_config": {
+                    "voice_config": {
+                        "prebuilt_voice_config": {
+                            "voice_name": random.choice(voices)
+                        }
+                    }
+                }
+            }
+
             response = model.generate_content(
                 contents=f"Say cheerfully: {text_to_speak}",
-                config=types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name=random.choice(voices),
-                            )
-                        )
-                    ),
-                )
+                generation_config=generation_config
             )
 
             pcm_data = response.candidates[0].content.parts[0].inline_data.data
