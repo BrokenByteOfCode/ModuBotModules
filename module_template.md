@@ -40,12 +40,12 @@ def register_handlers(app: Client):
     
     hello_handler = MessageHandler(
         hello_command,
-        filters.command("hello", prefixes=".") & filters.me
+        filters.command("hello", prefixes=".")
     )
     
     echo_handler = MessageHandler(
         echo_command,
-        filters.command("echo", prefixes=".") & filters.me
+        filters.command("echo", prefixes=".")
     )
 
     handlers_list = [hello_handler, echo_handler]

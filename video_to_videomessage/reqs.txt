@@ -1,0 +1,1 @@
+# No Python-only dependencies. Requires system `ffmpeg` binary to be installed and available in PATH.
