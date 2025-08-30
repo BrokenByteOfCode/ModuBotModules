@@ -27,7 +27,7 @@ IMAGE_MODELS = [
     'gemini-2.5-flash-image-preview',
     'gemini-2.0-flash-preview-image-generation'
 ]
-current_image_model_index = 0
+current_image_model_index = 1
 current_model_index = 0
 
 DEFAULT_SYSTEM_INSTRUCTION = (
