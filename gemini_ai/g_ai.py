@@ -9,11 +9,8 @@ from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
 from pathlib import Path
 from dotenv import load_dotenv, set_key, find_dotenv
-from io import BytesIO
-from PIL import Image
 
 model = None
-image_model = None
 DB_PATH = "gemini_memory.db"
 
 MODELS_LIST = [
@@ -22,12 +19,6 @@ MODELS_LIST = [
     'gemini-1.5-flash',
     'gemini-1.5-pro'
 ]
-
-IMAGE_MODELS = [
-    'gemini-2.5-flash-image-preview',
-    'gemini-2.0-flash-preview-image-generation'
-]
-current_image_model_index = 1
 current_model_index = 0
 
 DEFAULT_SYSTEM_INSTRUCTION = (
@@ -98,12 +89,6 @@ def get_next_model():
     current_model_index = (current_model_index + 1) % len(MODELS_LIST)
     return MODELS_LIST[current_model_index]
 
-def get_next_image_model():
-    global current_image_model_index, image_model
-    current_image_model_index = (current_image_model_index + 1) % len(IMAGE_MODELS)
-    image_model = genai.GenerativeModel(IMAGE_MODELS[current_image_model_index])
-    return IMAGE_MODELS[current_image_model_index]
-
 def create_model_with_current_settings():
     global current_system_instruction
     return genai.GenerativeModel(
@@ -113,7 +98,7 @@ def create_model_with_current_settings():
     )
 
 def initialize_gemini():
-    global model, image_model, current_system_instruction, current_model_index
+    global model, current_system_instruction, current_model_index
     load_dotenv()
     api_key = os.environ.get("GEMINI_API_KEY")
 
@@ -127,18 +112,15 @@ def initialize_gemini():
     if not api_key:
         print("GEMINI_API_KEY не знайдено. Очікування ключа через команду .api")
         model = None
-        image_model = None
         return False
     try:
         genai.configure(api_key=api_key)
         model = create_model_with_current_settings()
-        image_model = genai.GenerativeModel(IMAGE_MODELS[current_image_model_index])
-        print(f"Модуль Gemini AI успішно завантажено.\nТекст модель: {MODELS_LIST[current_model_index]}\nФото модель: {IMAGE_MODELS[current_image_model_index]}\nПерсона:", "Кастомна" if loaded_persona else "Стандартна")
+        print(f"Модуль Gemini AI успішно завантажено. Модель: {MODELS_LIST[current_model_index]}. Персона:", "Кастомна" if loaded_persona else "Стандартна")
         return True
     except Exception as e:
         print(f"Помилка ініціалізації Gemini: {e}")
         model = None
-        image_model = None
         return False
 
 async def set_api_key_command(client, message):
@@ -248,124 +230,12 @@ async def ai_command(client, message):
                 return
         
         response = await try_send_message_with_rotation(chat_session, content_for_gemini, thinking_message)
-        current_model = MODELS_LIST[current_model_index]
-        model_display_name = "Nano Banana" if current_model == "gemini-2.5-flash" else current_model.replace("gemini-", "Gemini ")
-        
-        response_text = response.text
-        if len(response_text) > 20 and message.from_user.username:
-            response_text += f"\n\n@{message.from_user.username} | {model_display_name}"
-        
-        await thinking_message.edit_text(response_text)
+        await thinking_message.edit_text(response.text)
         db_save_history(chat_id, chat_session.history)
     except Exception as e:
         await thinking_message.edit_text(f"**Помилка Gemini AI:**\n`{e}`")
         db_clear_history(chat_id)
     finally:
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
-
-async def try_generate_image(prompt, thinking_msg):
-    global image_model
-    attempts = 0
-    max_attempts = len(IMAGE_MODELS)
-    
-    while attempts < max_attempts:
-        try:
-            response = await image_model.generate_content_async(prompt)
-            return response
-        except Exception as e:
-            error_str = str(e).lower()
-            if '429' in error_str or 'quota' in error_str or 'rate limit' in error_str:
-                attempts += 1
-                if attempts < max_attempts:
-                    old_model = IMAGE_MODELS[current_image_model_index]
-                    new_model = get_next_image_model()
-                    await thinking_msg.edit_text(f"<code>Модель {old_model} перевантажена, переключаюсь на {new_model}...</code>")
-                    continue
-            raise e
-    
-    raise Exception("Всі моделі перевантажені")
-
-async def generate_image_command(client, message):
-    if not image_model:
-        await message.reply_text("Помилка: Gemini не налаштовано. `.api ВАШ_КЛЮЧ`")
-        return
-    
-    if len(message.command) < 2:
-        await message.reply_text("Використання: `.ai_generate опис картинки`")
-        return
-
-    prompt = message.text.split(maxsplit=1)[1]
-    thinking_msg = await message.reply_text("<code>Генерую зображення...</code>")
-    
-    try:
-        response = await try_generate_image(prompt, thinking_msg)
-        
-        for part in response.candidates[0].content.parts:
-            if part.inline_data is not None:
-                image_data = BytesIO(part.inline_data.data)
-                image = Image.open(image_data)
-                
-                temp_path = "generated_image.png"
-                image.save(temp_path)
-                
-                caption = f"🎨 Згенеровано за запитом: `{prompt}`"
-                if message.from_user.username:
-                    caption += f"\n\n@{message.from_user.username} | {IMAGE_MODELS[current_image_model_index]}"
-                await message.reply_photo(temp_path, caption=caption)
-                os.remove(temp_path)
-                await thinking_msg.delete()
-                return
-                
-        await thinking_msg.edit_text("❌ Не вдалося згенерувати зображення")
-    except Exception as e:
-        await thinking_msg.edit_text(f"**Помилка генерації зображення:**\n`{e}`")
-
-async def edit_image_command(client, message):
-    if not image_model:
-        await message.reply_text("Помилка: Gemini не налаштовано. `.api ВАШ_КЛЮЧ`")
-        return
-    
-    if not message.reply_to_message or not message.reply_to_message.photo:
-        await message.reply_text("Використання: Відповідь на фото з командою `.ai_edit інструкції для редагування`")
-        return
-    
-    if len(message.command) < 2:
-        await message.reply_text("Вкажіть інструкції для редагування після команди")
-        return
-
-    prompt = message.text.split(maxsplit=1)[1]
-    thinking_msg = await message.reply_text("<code>Редагую зображення...</code>")
-    file_path = None
-    
-    try:
-        file_path = await client.download_media(message.reply_to_message)
-        image_input = genai.upload_file(path=file_path)
-        
-        response = await try_generate_image([image_input, prompt], thinking_msg)
-        
-        for part in response.candidates[0].content.parts:
-            if part.inline_data is not None:
-                image_data = BytesIO(part.inline_data.data)
-                image = Image.open(image_data)
-                
-                temp_path = "edited_image.png"
-                image.save(temp_path)
-                
-                caption = f"✏️ Відредаговано за інструкцією: `{prompt}`"
-                if message.from_user.username:
-                    caption += f"\n\n@{message.from_user.username} | {IMAGE_MODELS[current_image_model_index]}"
-                await message.reply_photo(temp_path, caption=caption)
-                os.remove(temp_path)
-                os.remove(file_path)
-                await thinking_msg.delete()
-                return
-        
-        await thinking_msg.edit_text("❌ Не вдалося відредагувати зображення")
-        if os.path.exists(file_path):
-            os.remove(file_path)
-    except Exception as e:
-        await thinking_msg.edit_text(f"**Помилка редагування зображення:**\n`{e}`")
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
 
@@ -378,9 +248,7 @@ def register_handlers(app: Client):
         MessageHandler(persona_command, filters.command("persona", prefixes=".") & filters.me),
         MessageHandler(reset_persona_command, filters.command("reset_persona", prefixes=".") & filters.me),
         MessageHandler(ai_command, filters.command("ai", prefixes=".")),
-        MessageHandler(clear_memory_command, filters.command("clear", prefixes=".")),
-        MessageHandler(generate_image_command, filters.command(["ai_generate", "ai_gen"], prefixes=".")),
-        MessageHandler(edit_image_command, filters.command(["ai_edit"], prefixes="."))
+        MessageHandler(clear_memory_command, filters.command("clear", prefixes="."))
     ]
     for handler in handlers_list:
         app.add_handler(handler)
