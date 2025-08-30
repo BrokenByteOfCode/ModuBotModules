@@ -84,14 +84,10 @@ async def generate_image_command(client: Client, message: Message):
             )
         elif model_key == "sd21":
             result = gradio_client.predict(
-                prompt,
-                "blurry, low quality, distorted",
-                7.5,
-                20,
-                512,
-                512,
-                random.randint(0, 1000000),
-                api_name="/predict"
+                prompt=prompt,
+                negative="blurry, low quality, distorted",
+                scale=9,
+                api_name="/infer"
             )
         
         image_path = result[0] if isinstance(result, list) else result
