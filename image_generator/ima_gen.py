@@ -4,6 +4,8 @@ from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
 from gradio_client import Client as GradioClient
 import random
+import requests
+import os
 
 IMAGE_MODELS = {
     "sd35-large": {
@@ -94,6 +96,30 @@ async def generate_image_command(client: Client, message: Message):
         
         image_path = result[0] if isinstance(result, list) else result
         
+        if isinstance(image_path, dict) and 'url' in image_path:
+            image_url = image_path['url']
+            if not image_url.startswith('http'):
+                image_url = f"https://stabilityai-stable-diffusion-3-5-large.hf.space{image_url}"
+            
+            response = requests.get(image_url)
+            response.raise_for_status()
+            
+            temp_file = f"/tmp/generated_image_{random.randint(1000, 9999)}.webp"
+            with open(temp_file, 'wb') as f:
+                f.write(response.content)
+            image_path = temp_file
+        
+        elif isinstance(image_path, str) and not os.path.exists(image_path):
+            if image_path.startswith('/file='):
+                image_url = f"https://stabilityai-stable-diffusion-3-5-large.hf.space{image_path}"
+                response = requests.get(image_url)
+                response.raise_for_status()
+                
+                temp_file = f"/tmp/generated_image_{random.randint(1000, 9999)}.webp"
+                with open(temp_file, 'wb') as f:
+                    f.write(response.content)
+                image_path = temp_file
+        
         username = message.from_user.username or message.from_user.first_name
         caption = f"@{username} | {model_info['display_name']}"
         
@@ -103,6 +129,12 @@ async def generate_image_command(client: Client, message: Message):
             caption=caption,
             reply_to_message_id=message.id
         )
+        
+        if image_path.startswith('/tmp/'):
+            try:
+                os.remove(image_path)
+            except:
+                pass
         
         await status_msg.delete()
         
