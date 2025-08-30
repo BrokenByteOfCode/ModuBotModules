@@ -338,6 +338,9 @@ async def percent_command(client: Client, message: Message):
     await message.reply_text(f"📊 {item}: **{percentage}%**", parse_mode=ParseMode.MARKDOWN)
 
 async def rp_action_handler(client: Client, message: Message):
+    if message.text.startswith('.'):
+        return
+    
     if not message.reply_to_message:
         return
     
@@ -405,6 +408,24 @@ async def rp_action_handler(client: Client, message: Message):
             return
 
 def register_handlers(app: Client):
+    def rp_filter(_, __, message):
+        if not message.text or message.text.startswith('.'):
+            return False
+        
+        first_line = message.text.strip().split('\n')[0].lower()
+        rp_keywords = [
+            "кусьнути", "вдарити", "поцілувати", "обійняти", "покарати",
+            "домінувати", "змусити", "трахнути", "вбити", "лизнути",
+            "погладити", "шльопнути", "задушити", "знищити", "розірвати",
+            "роздавити", "спалити", "заморозити", "вкрасти", "пограбувати",
+            "лягати", "сісти", "взяти", "кинути", "штовхнути", "потягнути",
+            "підняти", "кидати", "відлупити", "мордувати", "хапати", "кусати",
+            "душити", "рвати", "палити", "морозити"
+        ]
+        return any(keyword in first_line for keyword in rp_keywords)
+
+    rp_custom_filter = filters.create(rp_filter)
+    
     handlers_list = [
         MessageHandler(fun_help_command, filters.command("funhelp", prefixes=".")),
         MessageHandler(dicksize_command, filters.command("dicksize", prefixes=".")),
@@ -428,6 +449,10 @@ def register_handlers(app: Client):
         MessageHandler(vibe_command, filters.command("vibe", prefixes=".")),
         MessageHandler(dice_command, filters.command("dice", prefixes=".")),
         MessageHandler(percent_command, filters.command("percent", prefixes=".")),
-        MessageHandler(rp_action_handler, filters.text & filters.reply)
+        MessageHandler(rp_action_handler, rp_custom_filter & filters.reply)
     ]
+    
+    for handler in handlers_list:
+        app.add_handler(handler)
+        
     return handlers_list
