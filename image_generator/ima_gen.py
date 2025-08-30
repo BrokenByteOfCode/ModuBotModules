@@ -1,25 +1,22 @@
+# module_logic.py
 from pyrogram import Client, filters
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
 from gradio_client import Client as GradioClient
-import io
 import random
 
 IMAGE_MODELS = {
-    "stable-diffusion-3.5-large": {
-        "client": "stabilityai/stable-diffusion-3.5-large",
-        "display_name": "Stable Diffusion 3.5 Large",
-        "api_name": "/infer"
+    "sd35-large": {
+        "space": "stabilityai/stable-diffusion-3.5-large",
+        "display_name": "Stable Diffusion 3.5 Large"
     },
-    "stable-diffusion-2": {
-        "client": "stabilityai/stable-diffusion",
-        "display_name": "Stable Diffusion 2.1",
-        "api_name": "/predict"
+    "flux-schnell": {
+        "space": "black-forest-labs/FLUX.1-schnell",
+        "display_name": "FLUX.1 Schnell"
     },
-    "playground-v2.5": {
-        "client": "playgroundai/playground-v2.5-1024px-aesthetic",
-        "display_name": "Playground v2.5",
-        "api_name": "/predict"
+    "sd21": {
+        "space": "stabilityai/stable-diffusion",
+        "display_name": "Stable Diffusion 2.1"
     }
 }
 
@@ -34,7 +31,7 @@ async def generate_image_command(client: Client, message: Message):
             f"**Доступні моделі:**\n{model_list}\n\n"
             f"**Приклади:**\n"
             f"`.img cute cat in space`\n"
-            f"`.img kandinsky beautiful sunset over mountains`"
+            f"`.img flux-schnell beautiful sunset over mountains`"
         )
         return
 
@@ -59,9 +56,9 @@ async def generate_image_command(client: Client, message: Message):
     )
     
     try:
-        gradio_client = GradioClient(model_info['client'])
+        gradio_client = GradioClient(model_info['space'])
         
-        if model_key == "stable-diffusion-3.5-large":
+        if model_key == "sd35-large":
             result = gradio_client.predict(
                 prompt=prompt,
                 negative_prompt="blurry, low quality, distorted",
@@ -71,9 +68,19 @@ async def generate_image_command(client: Client, message: Message):
                 height=512,
                 guidance_scale=4.5,
                 num_inference_steps=40,
-                api_name=model_info['api_name']
+                api_name="/infer"
             )
-        elif model_key == "stable-diffusion-2":
+        elif model_key == "flux-schnell":
+            result = gradio_client.predict(
+                prompt=prompt,
+                seed=random.randint(0, 1000000),
+                randomize_seed=True,
+                width=512,
+                height=512,
+                num_inference_steps=4,
+                api_name="/infer"
+            )
+        elif model_key == "sd21":
             result = gradio_client.predict(
                 prompt,
                 "blurry, low quality, distorted",
@@ -82,24 +89,7 @@ async def generate_image_command(client: Client, message: Message):
                 512,
                 512,
                 random.randint(0, 1000000),
-                api_name=model_info['api_name']
-            )
-        elif model_key == "playground-v2.5":
-            result = gradio_client.predict(
-                prompt=prompt,
-                negative_prompt="blurry, low quality",
-                width=512,
-                height=512,
-                guidance_scale=3,
-                num_inference_steps=50,
-                seed=random.randint(0, 1000000),
-                api_name=model_info['api_name']
-            )
-        else:
-            result = gradio_client.predict(
-                prompt,
-                "blurry, low quality",
-                api_name=model_info['api_name']
+                api_name="/predict"
             )
         
         image_path = result[0] if isinstance(result, list) else result
