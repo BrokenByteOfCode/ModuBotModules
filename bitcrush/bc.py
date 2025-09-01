@@ -160,7 +160,7 @@ async def bitcrush_command(client: Client, message: Message):
                             chat_id=message.chat.id,
                             audio=temp_mp3.name,
                             caption=f"🎵 Bitcrushed: {bit_depth}-bit, downsample x{downsample_factor}",
-                            reply_to_message_id=message.id
+                            reply_to_message_id=message.reply_to_message_id or message.id
                         )
                         await update_progress(status_msg, 3, "success")
                     except Exception as e:
