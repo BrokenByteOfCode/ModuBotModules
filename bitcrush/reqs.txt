@@ -1,6 +1,5 @@
-librosa
-soundfile
 pydub
+soundfile
 numpy
 audioread
 ffmpeg-python
