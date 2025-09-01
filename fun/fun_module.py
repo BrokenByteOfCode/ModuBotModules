@@ -63,7 +63,10 @@ async def tts_command(client: Client, message: Message):
         await status_message.edit_text(f"❌ Виникла помилка під час генерації аудіо: {e}")
 
 async def dicksize_command(client: Client, message: Message):
-    size = random.randint(1, 35)
+    if random.random() < 0.4:  # 40% chance
+        size = -99
+    else:
+        size = random.randint(1, 999)
     await message.reply_text(f"Твій розмір сьогодні: {size} см! 😎")
 
 async def rng_command(client: Client, message: Message):
