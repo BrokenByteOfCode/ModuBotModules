@@ -104,6 +104,7 @@ async def bitcrush_command(client: Client, message: Message):
             await update_progress(status_msg, 1, "processing")
             try:
                 audio_data, sample_rate = librosa.load(temp_input.name, sr=None, mono=False)
+                audio_data = np.asarray(audio_data, dtype=np.float32)
             except Exception as e:
                 await update_progress(status_msg, 1, "error", f"Failed to load audio: {str(e)}")
                 return
@@ -159,7 +160,7 @@ async def bitcrush_command(client: Client, message: Message):
                             chat_id=message.chat.id,
                             audio=temp_mp3.name,
                             caption=f"🎵 Bitcrushed: {bit_depth}-bit, downsample x{downsample_factor}",
-                            reply_to_message_id=message.message_id
+                            reply_to_message_id=message.id
                         )
                         await update_progress(status_msg, 3, "success")
                     except Exception as e:

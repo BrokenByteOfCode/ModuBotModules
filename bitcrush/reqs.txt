@@ -2,3 +2,5 @@ librosa
 soundfile
 pydub
 numpy
+audioread
+ffmpeg-python
