@@ -93,10 +93,9 @@ async def bitcrush_command(client: Client, message: Message):
     
     try:
         await update_progress(status_msg, 0, "processing")
-        audio_file = message.reply_to_message.audio
         
         with tempfile.NamedTemporaryFile(suffix='.tmp') as temp_input:
-            await client.download_media(audio_file, temp_input.name)
+            await client.download_media(message.reply_to_message, temp_input.name)
             await update_progress(status_msg, 0, "success")
             
             await update_progress(status_msg, 1, "processing")
@@ -154,11 +153,10 @@ async def bitcrush_command(client: Client, message: Message):
                     await update_progress(status_msg, 3, "processing")
                     
                     try:
-                        sent_message = await client.send_audio(
+                        await client.send_audio(
                             chat_id=message.chat.id,
                             audio=temp_mp3.name,
-                            caption=f"🎵 Bitcrushed: {bit_depth}-bit, downsample x{downsample_factor}",
-                            reply_to_message_id=message.reply_to_message.id
+                            caption=f"🎵 Bitcrushed: {bit_depth}-bit, downsample x{downsample_factor}"
                         )
                         await update_progress(status_msg, 3, "success")
                     except Exception as e:
