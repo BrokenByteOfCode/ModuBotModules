@@ -61,9 +61,12 @@ async def update_progress(msg, step, status, error_msg=None):
             progress_text += f"[ ] {step_name}\n"
     
     try:
-        await msg.edit_text(f"🎵 **Bitcrushing Progress**\n\n{progress_text}")
-    except:
-        pass
+        if hasattr(msg, 'edit_text'):
+            await msg.edit_text(f"🎵 **Bitcrushing Progress**\n\n{progress_text}")
+        elif hasattr(msg, 'edit'):
+            await msg.edit(f"🎵 **Bitcrushing Progress**\n\n{progress_text}")
+    except Exception as e:
+        print(f"Failed to update progress: {e}")
 
 async def bitcrush_command(client: Client, message: Message):
     if not message.reply_to_message or not message.reply_to_message.audio:
@@ -91,10 +94,13 @@ async def bitcrush_command(client: Client, message: Message):
     
     status_msg = await message.reply_text("🎵 **Bitcrushing Progress**\n\n[ ] Downloading audio\n[ ] Crushing\n[ ] Returning back to audio\n[ ] Publishing\n[ ] Done")
     
+    temp_files = []
+    
     try:
         await update_progress(status_msg, 0, "processing")
         
-        with tempfile.NamedTemporaryFile(suffix='.tmp') as temp_input:
+        with tempfile.NamedTemporaryFile(suffix='.tmp', delete=False) as temp_input:
+            temp_files.append(temp_input.name)
             await client.download_media(message.reply_to_message, temp_input.name)
             await update_progress(status_msg, 0, "success")
             
@@ -125,6 +131,7 @@ async def bitcrush_command(client: Client, message: Message):
             await update_progress(status_msg, 2, "processing")
             
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_output:
+                temp_files.append(temp_output.name)
                 try:
                     if len(processed_audio.shape) > 1:
                         sf.write(temp_output.name, processed_audio.T, sample_rate)
@@ -138,16 +145,15 @@ async def bitcrush_command(client: Client, message: Message):
                     audio_segment = AudioSegment.from_wav(temp_output.name)
                 except Exception as e:
                     await update_progress(status_msg, 2, "error", f"Failed to convert audio: {str(e)}")
-                    os.unlink(temp_output.name)
                     return
                 
                 with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_mp3:
+                    temp_files.append(temp_mp3.name)
                     try:
                         audio_segment.export(temp_mp3.name, format="mp3", bitrate="128k")
                         await update_progress(status_msg, 2, "success")
                     except Exception as e:
                         await update_progress(status_msg, 2, "error", f"Failed to export MP3: {str(e)}")
-                        os.unlink(temp_output.name)
                         return
                     
                     await update_progress(status_msg, 3, "processing")
@@ -161,32 +167,43 @@ async def bitcrush_command(client: Client, message: Message):
                         await update_progress(status_msg, 3, "success")
                     except Exception as e:
                         await update_progress(status_msg, 3, "error", f"Failed to send audio: {str(e)}")
-                        os.unlink(temp_output.name)
-                        os.unlink(temp_mp3.name)
                         return
-                
-                os.unlink(temp_output.name)
-                os.unlink(temp_mp3.name)
         
         await update_progress(status_msg, 4, "success")
         await asyncio.sleep(2)
-        await status_msg.delete()
+        
+        try:
+            await status_msg.delete()
+        except:
+            pass
         
     except Exception as e:
         try:
             current_step = 0
-            if "download" in str(e).lower():
+            error_lower = str(e).lower()
+            if "download" in error_lower:
                 current_step = 0
-            elif "load" in str(e).lower() or "crush" in str(e).lower():
+            elif "load" in error_lower or "crush" in error_lower:
                 current_step = 1
-            elif "write" in str(e).lower() or "convert" in str(e).lower():
+            elif "write" in error_lower or "convert" in error_lower:
                 current_step = 2
-            elif "send" in str(e).lower():
+            elif "send" in error_lower:
                 current_step = 3
             
             await update_progress(status_msg, current_step, "error", str(e))
-        except:
-            await message.reply_text(f"❌ Critical error: {str(e)}")
+        except Exception as update_error:
+            try:
+                await message.reply_text(f"❌ Critical error: {str(e)}")
+            except:
+                print(f"Failed to send error message: {str(e)}")
+    
+    finally:
+        for temp_file in temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except:
+                pass
 
 async def bitcrush_help_command(client: Client, message: Message):
     help_text = """🎵 **Bitcrushing Module**
