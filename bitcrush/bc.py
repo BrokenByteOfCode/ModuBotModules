@@ -7,6 +7,7 @@ import librosa
 import soundfile as sf
 from pydub import AudioSegment
 import tempfile
+import asyncio
 
 def bitcrush_audio(audio_data, sample_rate, bit_depth=8, downsample_factor=4):
     original_max = np.max(np.abs(audio_data))
@@ -34,6 +35,38 @@ def bitcrush_audio(audio_data, sample_rate, bit_depth=8, downsample_factor=4):
     
     return upsampled
 
+async def update_progress(msg, step, status, error_msg=None):
+    steps = [
+        "Downloading audio",
+        "Crushing", 
+        "Returning back to audio",
+        "Publishing",
+        "Done"
+    ]
+    
+    progress_text = ""
+    
+    for i, step_name in enumerate(steps):
+        if i < step:
+            progress_text += f"[✓] {step_name}\n"
+        elif i == step:
+            if status == "processing":
+                progress_text += f"[?] {step_name}\n"
+            elif status == "success":
+                progress_text += f"[✓] {step_name}\n"
+            elif status == "error":
+                progress_text += f"[X] {step_name}\n"
+                if error_msg:
+                    progress_text += f"Error: {error_msg}\n"
+                break
+        else:
+            progress_text += f"[ ] {step_name}\n"
+    
+    try:
+        await msg.edit_text(f"🎵 **Bitcrushing Progress**\n\n{progress_text}")
+    except:
+        pass
+
 async def bitcrush_command(client: Client, message: Message):
     if not message.reply_to_message or not message.reply_to_message.audio:
         await message.reply_text("Відповідь на аудіофайл для застосування bitcrushing ефекту.")
@@ -58,52 +91,105 @@ async def bitcrush_command(client: Client, message: Message):
             except ValueError:
                 pass
     
-    status_msg = await message.reply_text("🎵 Обробка аудіо...")
+    status_msg = await message.reply_text("🎵 **Bitcrushing Progress**\n\n[ ] Downloading audio\n[ ] Crushing\n[ ] Returning back to audio\n[ ] Publishing\n[ ] Done")
     
     try:
+        await update_progress(status_msg, 0, "processing")
         audio_file = message.reply_to_message.audio
         
         with tempfile.NamedTemporaryFile(suffix='.tmp') as temp_input:
             await client.download_media(audio_file, temp_input.name)
+            await update_progress(status_msg, 0, "success")
             
-            audio_data, sample_rate = librosa.load(temp_input.name, sr=None)
+            await update_progress(status_msg, 1, "processing")
+            try:
+                audio_data, sample_rate = librosa.load(temp_input.name, sr=None, mono=False)
+            except Exception as e:
+                await update_progress(status_msg, 1, "error", f"Failed to load audio: {str(e)}")
+                return
             
             if len(audio_data.shape) > 1:
                 processed_channels = []
-                for channel in range(audio_data.shape[1]):
+                for channel in range(audio_data.shape[0]):
                     processed_channel = bitcrush_audio(
-                        audio_data[:, channel], 
+                        audio_data[channel], 
                         sample_rate, 
                         bit_depth, 
                         downsample_factor
                     )
                     processed_channels.append(processed_channel)
-                processed_audio = np.column_stack(processed_channels)
+                processed_audio = np.array(processed_channels)
             else:
                 processed_audio = bitcrush_audio(audio_data, sample_rate, bit_depth, downsample_factor)
             
+            await update_progress(status_msg, 1, "success")
+            
+            await update_progress(status_msg, 2, "processing")
+            
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_output:
-                sf.write(temp_output.name, processed_audio, sample_rate)
+                try:
+                    if len(processed_audio.shape) > 1:
+                        sf.write(temp_output.name, processed_audio.T, sample_rate)
+                    else:
+                        sf.write(temp_output.name, processed_audio, sample_rate)
+                except Exception as e:
+                    await update_progress(status_msg, 2, "error", f"Failed to write audio: {str(e)}")
+                    return
                 
-                audio_segment = AudioSegment.from_wav(temp_output.name)
+                try:
+                    audio_segment = AudioSegment.from_wav(temp_output.name)
+                except Exception as e:
+                    await update_progress(status_msg, 2, "error", f"Failed to convert audio: {str(e)}")
+                    os.unlink(temp_output.name)
+                    return
                 
                 with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_mp3:
-                    audio_segment.export(temp_mp3.name, format="mp3", bitrate="128k")
+                    try:
+                        audio_segment.export(temp_mp3.name, format="mp3", bitrate="128k")
+                        await update_progress(status_msg, 2, "success")
+                    except Exception as e:
+                        await update_progress(status_msg, 2, "error", f"Failed to export MP3: {str(e)}")
+                        os.unlink(temp_output.name)
+                        return
                     
-                    await client.send_audio(
-                        chat_id=message.chat.id,
-                        audio=temp_mp3.name,
-                        caption=f"🎵 Bitcrushed: {bit_depth}-bit, downsample x{downsample_factor}",
-                        reply_to_message_id=message.message_id
-                    )
+                    await update_progress(status_msg, 3, "processing")
+                    
+                    try:
+                        await client.send_audio(
+                            chat_id=message.chat.id,
+                            audio=temp_mp3.name,
+                            caption=f"🎵 Bitcrushed: {bit_depth}-bit, downsample x{downsample_factor}",
+                            reply_to_message_id=message.message_id
+                        )
+                        await update_progress(status_msg, 3, "success")
+                    except Exception as e:
+                        await update_progress(status_msg, 3, "error", f"Failed to send audio: {str(e)}")
+                        os.unlink(temp_output.name)
+                        os.unlink(temp_mp3.name)
+                        return
                 
                 os.unlink(temp_output.name)
                 os.unlink(temp_mp3.name)
         
+        await update_progress(status_msg, 4, "success")
+        await asyncio.sleep(2)
         await status_msg.delete()
         
     except Exception as e:
-        await status_msg.edit_text(f"❌ Помилка обробки аудіо: {str(e)}")
+        try:
+            current_step = 0
+            if "download" in str(e).lower():
+                current_step = 0
+            elif "load" in str(e).lower() or "crush" in str(e).lower():
+                current_step = 1
+            elif "write" in str(e).lower() or "convert" in str(e).lower():
+                current_step = 2
+            elif "send" in str(e).lower():
+                current_step = 3
+            
+            await update_progress(status_msg, current_step, "error", str(e))
+        except:
+            await message.reply_text(f"❌ Critical error: {str(e)}")
 
 async def bitcrush_help_command(client: Client, message: Message):
     help_text = """🎵 **Bitcrushing Module**
