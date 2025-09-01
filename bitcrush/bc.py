@@ -18,10 +18,8 @@ def bitcrush_audio(audio_data, sample_rate, bit_depth=8, downsample_factor=4):
         normalized_audio = audio_data
     
     downsampled = normalized_audio[::downsample_factor]
-    
     levels = 2 ** bit_depth
     quantized = np.round(downsampled * (levels - 1)) / (levels - 1)
-    
     upsampled = np.repeat(quantized, downsample_factor)
     
     if len(upsampled) > len(audio_data):
@@ -156,11 +154,11 @@ async def bitcrush_command(client: Client, message: Message):
                     await update_progress(status_msg, 3, "processing")
                     
                     try:
-                        await client.send_audio(
+                        sent_message = await client.send_audio(
                             chat_id=message.chat.id,
                             audio=temp_mp3.name,
                             caption=f"🎵 Bitcrushed: {bit_depth}-bit, downsample x{downsample_factor}",
-                            reply_to_message_id=message.reply_to_message_id or message.id
+                            reply_to_message_id=message.reply_to_message.id
                         )
                         await update_progress(status_msg, 3, "success")
                     except Exception as e:
