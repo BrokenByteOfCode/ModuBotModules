@@ -144,15 +144,20 @@ def initialize_gemini():
 
 async def get_user_bio(client, user_id):
     try:
-        user = await client.get_users(user_id)
-        return user.bio if user.bio else "Біо не вказано"
+        chat = await client.get_chat(user_id)
+        return chat.bio if hasattr(chat, 'bio') and chat.bio else "Біо не вказано"
     except Exception as e:
         return f"Помилка отримання біо: {e}"
 
 async def get_user_profile_info(client, user_id, chat_id):
     try:
         user = await client.get_users(user_id)
-        bio = user.bio if user.bio else "Не вказано"
+        
+        try:
+            chat = await client.get_chat(user_id)
+            bio = chat.bio if hasattr(chat, 'bio') and chat.bio else "Не вказано"
+        except:
+            bio = "Не вказано"
         
         recent_messages = db_get_user_recent_messages(user_id, chat_id, 15)
         recent_texts = []
