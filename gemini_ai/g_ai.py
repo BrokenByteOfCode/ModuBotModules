@@ -9,6 +9,7 @@ from pyrogram.handlers import MessageHandler
 from pyrogram.types import Message
 from pathlib import Path
 from dotenv import load_dotenv, set_key, find_dotenv
+from datetime import datetime, timedelta
 
 model = None
 DB_PATH = "gemini_memory.db"
@@ -42,6 +43,7 @@ def db_init():
         cur = con.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS chat_history (chat_id INTEGER PRIMARY KEY, history TEXT NOT NULL)")
         cur.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        cur.execute("CREATE TABLE IF NOT EXISTS user_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, chat_id INTEGER, message_text TEXT, date INTEGER)")
         con.commit()
 
 def db_save_setting(key, value):
@@ -62,6 +64,23 @@ def db_delete_setting(key):
         cur = con.cursor()
         cur.execute("DELETE FROM settings WHERE key = ?", (key,))
         con.commit()
+
+def db_save_user_message(user_id, chat_id, message_text, date):
+    with sqlite3.connect(DB_PATH) as con:
+        cur = con.cursor()
+        cur.execute("INSERT INTO user_messages (user_id, chat_id, message_text, date) VALUES (?, ?, ?, ?)", 
+                   (user_id, chat_id, message_text, date))
+        con.commit()
+
+def db_get_user_recent_messages(user_id, chat_id, limit=15):
+    with sqlite3.connect(DB_PATH) as con:
+        cur = con.cursor()
+        res = cur.execute("""
+            SELECT message_text, date FROM user_messages 
+            WHERE user_id = ? AND chat_id = ? 
+            ORDER BY date DESC LIMIT ?
+        """, (user_id, chat_id, limit))
+        return res.fetchall()
 
 def db_load_history(chat_id):
     with sqlite3.connect(DB_PATH) as con:
@@ -123,6 +142,42 @@ def initialize_gemini():
         model = None
         return False
 
+async def get_user_bio(client, user_id):
+    try:
+        user = await client.get_users(user_id)
+        return user.bio if user.bio else "Біо не вказано"
+    except Exception as e:
+        return f"Помилка отримання біо: {e}"
+
+async def get_user_profile_info(client, user_id, chat_id):
+    try:
+        user = await client.get_users(user_id)
+        bio = user.bio if user.bio else "Не вказано"
+        
+        recent_messages = db_get_user_recent_messages(user_id, chat_id, 15)
+        recent_texts = []
+        for msg_text, msg_date in recent_messages:
+            date_str = datetime.fromtimestamp(msg_date).strftime("%d.%m %H:%M")
+            recent_texts.append(f"[{date_str}] {msg_text}")
+        
+        profile_info = f"""
+═══ ПРОФІЛЬ КОРИСТУВАЧА ═══
+👤 Ім'я: {user.first_name} {user.last_name or ''}
+🆔 ID: {user_id}
+📝 Біо: {bio}
+📱 Юзернейм: @{user.username if user.username else 'Немає'}
+🤖 Бот: {'Так' if user.is_bot else 'Ні'}
+✅ Верифікований: {'Так' if user.is_verified else 'Ні'}
+🔒 Преміум: {'Так' if user.is_premium else 'Ні'}
+
+📈 ОСТАННІ ПОВІДОМЛЕННЯ ({len(recent_texts)} з 15):
+{chr(10).join(recent_texts[:15]) if recent_texts else "Повідомлень не знайдено"}
+═══════════════════════════
+"""
+        return profile_info
+    except Exception as e:
+        return f"Помилка отримання інфо: {e}"
+
 async def set_api_key_command(client, message):
     if len(message.command) < 2:
         await message.reply_text("Приклад: `.api YOUR_API_KEY`")
@@ -165,6 +220,15 @@ async def clear_memory_command(client, message):
         await message.reply_text("🧹 **Пам'ять для цього чату очищено.**")
     else:
         await message.reply_text("🤔 Історії для цього чату немає.")
+
+async def profile_command(client, message):
+    if message.reply_to_message:
+        user_id = message.reply_to_message.from_user.id
+    else:
+        user_id = message.from_user.id
+    
+    profile_info = await get_user_profile_info(client, user_id, message.chat.id)
+    await message.reply_text(f"```\n{profile_info}\n```")
 
 async def try_send_message_with_rotation(chat_session, content_for_gemini, thinking_message):
     global model, current_model_index
@@ -209,14 +273,25 @@ async def ai_command(client, message):
 
     prompt_text = message.text.split(maxsplit=1)[1] if len(message.command) > 1 else ""
     user_name = message.from_user.first_name
+    user_id = message.from_user.id
     chat_id = message.chat.id
     
+    db_save_user_message(user_id, chat_id, message.text, int(message.date.timestamp()))
+    
     chat_session = model.start_chat(history=db_load_history(chat_id))
-    thinking_message = await message.reply_text("<code>...</code>")
+    thinking_message = await message.reply_text("<code>Збираю інформацію про користувача...</code>")
     file_path = None
     
     try:
-        content_for_gemini = [f"{user_name}: {prompt_text}"]
+        user_profile = await get_user_profile_info(client, user_id, chat_id)
+        
+        content_for_gemini = [f"""
+{user_profile}
+
+ПОТОЧНИЙ ЗАПИТ КОРИСТУВАЧА:
+{user_name}: {prompt_text}
+"""]
+        
         if message.reply_to_message and message.reply_to_message.media:
             replied_msg = message.reply_to_message
             if replied_msg.photo or replied_msg.document:
@@ -229,6 +304,7 @@ async def ai_command(client, message):
                 await thinking_message.edit_text("<code>Цей тип файлу не підтримується.</code>")
                 return
         
+        await thinking_message.edit_text("<code>Генерую відповідь...</code>")
         response = await try_send_message_with_rotation(chat_session, content_for_gemini, thinking_message)
         await thinking_message.edit_text(response.text)
         db_save_history(chat_id, chat_session.history)
@@ -239,6 +315,15 @@ async def ai_command(client, message):
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
 
+async def message_tracker(client, message):
+    if not message.from_user.is_bot and message.text and not message.text.startswith('.'):
+        db_save_user_message(
+            message.from_user.id, 
+            message.chat.id, 
+            message.text, 
+            int(message.date.timestamp())
+        )
+
 def register_handlers(app: Client):
     db_init()
     initialize_gemini()
@@ -248,7 +333,9 @@ def register_handlers(app: Client):
         MessageHandler(persona_command, filters.command("persona", prefixes=".") & filters.me),
         MessageHandler(reset_persona_command, filters.command("reset_persona", prefixes=".") & filters.me),
         MessageHandler(ai_command, filters.command("ai", prefixes=".")),
-        MessageHandler(clear_memory_command, filters.command("clear", prefixes="."))
+        MessageHandler(clear_memory_command, filters.command("clear", prefixes=".")),
+        MessageHandler(profile_command, filters.command("profile", prefixes=".")),
+        MessageHandler(message_tracker, filters.text & ~filters.command(["ai", "api", "persona", "reset_persona", "clear", "profile"], prefixes="."))
     ]
     for handler in handlers_list:
         app.add_handler(handler)
