@@ -1,3 +1,7 @@
+### Документація по створенню модулів для ModuBot
+
+Ця інструкція описує, як створювати власні модулі, використовуючи всі сучасні можливості платформи ModuBot.
+
 **1. Структура файлів:**
 Кожен модуль — це папка всередині `ModuBotModules`. Назва папки є унікальним іменем модуля.
 
@@ -8,84 +12,114 @@ ModuBotModules/
     └── reqs.txt           # (Необов'язково) Файл з залежностями
 ```
 
-**2. Основний файл (`example_module.py`):**
-Це серце модуля. Він повинен містити три ключові компоненти:
+**2. Файл залежностей (`reqs.txt`):**
+Це потужний інструмент для керування залежностями вашого модуля. Він підтримує два типи залежностей:
 
-*   **Функція `help_info()`**:
-    *   Ця функція не є обов'язковою, але дуже рекомендована.
-    *   Вона повинна повертати текстовий рядок (можна використовувати Markdown), який буде показуватися, коли користувач введе команду `.help <назва_модуля>`.
-    *   Це ідеальне місце для опису команд модуля та прикладів їх використання.
+*   **PyPI бібліотеки:** Якщо ваш модуль використовує сторонні бібліотеки (наприклад, `requests` або `Pillow`), просто вкажіть їх назви, кожну з нового рядка.
+*   ** Залежності від інших модулів:** Якщо ваш модуль залежить від функціоналу іншого модуля, вкажіть його назву у фігурних дужках `{}`. Ви можете перерахувати кілька модулів через кому.
 
-*   **Функції-обробники команд**:
-    *   Це асинхронні функції (`async def`), які виконують роботу, коли користувач викликає команду (наприклад, `.hello`).
-    *   Вони приймають два аргументи: `client` та `message`.
-
-*   **Головна функція `register_handlers(app)`**:
-    *   Це **єдина обов'язкова точка входу** для вашого бота. Система викликає саме цю функцію.
-    *   Її завдання — створити об'єкти `MessageHandler` (або інші обробники Pyrogram) для кожної команди та **повернути їх у вигляді списку**.
-    *   **Важливо:** Вам більше не потрібно викликати `app.add_handler` всередині цієї функції. Просто поверніть список, а ядро бота подбає про все інше.
-
-**3. Файл залежностей (`reqs.txt`):**
-Якщо ваш модуль використовує бібліотеки, яких немає в основному боті (наприклад, `gtts` для тексту в голос або `Pillow` для зображень), просто додайте їх назви у цей файл, кожну з нового рядка. Бот автоматично встановить їх при завантаженні модуля.
+Система автоматично встановить/завантажить усі залежності перед тим, як завантажити ваш модуль.
 
 *Приклад `reqs.txt`:*
 ```
-gtts
-pillow
+# Встановлює бібліотеку Pillow з PyPI
+Pillow
+
+# Вимагає, щоб модулі utils_module та logger_module були завантажені
+{utils_module, logger_module} 
 ```
+
+**3. Основний файл (`example_module.py`):**
+Це серце модуля. Він повинен містити ключові компоненти:
+
+*   **Функція `help_info()`**: (Рекомендовано)
+    *   Повертає текстовий рядок (з підтримкою Markdown), який буде показано за командою `.help <назва_модуля>`. Це ідеальне місце для документації ваших команд.
+
+*   **Функції-обробники команд**:
+    *   Асинхронні функції (`async def`), які виконують логіку команди.
+
+*   **Головна функція `register_handlers(app)`**: (Обов'язково)
+    *   Єдина точка входу. Система викликає цю функцію для реєстрації команд.
+    *   Вона повинна створити обробники Pyrogram (`MessageHandler` тощо) та **повернути їх у вигляді списку**. Ядро бота саме додасть їх.
+
+*   ** Взаємодія між модулями**:
+    *   Ви можете викликати функції з інших завантажених модулів. Це робиться через спеціальний доступ до системи модулів.
+
+    ```python
+    # Отримуємо доступ до головного екземпляра бота
+    bot = client.bot_instance
+    
+    # Через нього отримуємо доступ до потрібного модуля
+    utils = bot.module_system.get_module("utils_module")
+    
+    # Перевіряємо, чи модуль завантажено, і викликаємо його функцію
+    if utils:
+        utils.some_function()
+    ```
 
 ---
 
-### Оновлений код-шаблон
+### Практичний приклад: Модуль `prettify` залежить від `formatter`
 
-Цей шаблон тепер міститься у вашому `module_system.py` і буде використовуватися командою `.createmodule`. Він демонструє всі найкращі практики.
+**1. Модуль `formatter` (залежність)**
 
-```python
-# modubot/module_system.py -> boilerplate
+*   `ModuBotModules/formatter/formatter.py`:
+    ```python
+    def help_info():
+        return "Модуль з утилітами форматування. Не має власних команд."
 
-from pyrogram import Client, filters
-from pyrogram.handlers import MessageHandler
-from pyrogram.types import Message
+    def make_pretty(text: str) -> str:
+        """Обгортає текст у зірочки."""
+        return f"✨ {text} ✨"
 
-# 1. Функція допомоги для команди .help <module_name>
-def help_info():
-    """Повертає рядок з допомогою для цього модуля."""
-    return """**Допомога по модулю Example**
+    def register_handlers(app):
+        # Цей модуль не реєструє жодної команди
+        return []
+    ```
+*   У нього немає `reqs.txt`.
 
-Цей модуль демонструє базові можливості системи модулів.
+**2. Модуль `prettify` (основний)**
 
-**Команди:**
-- `.hello`: Бот вітається з вами.
-- `.echo <текст>`: Бот повторює ваш текст.
+*   `ModuBotModules/prettify/reqs.txt`:
+    ```
+    {formatter}
+    ```
 
-**Автор:** Ваше ім'я
-"""
+*   `ModuBotModules/prettify/prettify.py`:
+    ```python
+    from pyrogram import Client, filters
+    from pyrogram.handlers import MessageHandler
+    from pyrogram.types import Message
 
-# 2. Функції-обробники для кожної команди
-async def hello_command(client: Client, message: Message):
-    """Обробник команди .hello"""
-    user_name = message.from_user.first_name
-    await message.reply_text(f"Привіт, {user_name}! Це демонстраційний модуль.")
-
-async def echo_command(client: Client, message: Message):
-    """Обробник команди .echo"""
-    if len(message.command) > 1:
-        text_to_echo = message.text.split(maxsplit=1)[1]
-        await message.reply_text(text_to_echo)
-    else:
-        await message.reply_text("Будь ласка, вкажіть текст для повторення.\nПриклад: `.echo Привіт, світ!`")
-
-# 3. Головна функція, яка реєструє всі обробники
-def register_handlers(app: Client):
-    """Створює та повертає список обробників для цього модуля."""
+    def help_info():
+        return """**Модуль Prettify**
     
-    # Створюємо обробники для кожної команди
-    # Фільтр filters.me гарантує, що команда спрацює тільки від вас
-    handlers_to_register = [
-        MessageHandler(hello_command, filters.command("hello", prefixes=".") & filters.me),
-        MessageHandler(echo_command, filters.command("echo", prefixes=".") & filters.me)
-    ]
+    Використовує модуль `formatter` для красивого виводу тексту.
     
-    # Просто повертаємо список. Ядро бота саме додасть їх.
-    return handlers_to_register
-```
+    **Команди:**
+    - `.pretty <текст>`: Робить текст красивим.
+    """
+
+    async def pretty_command(client: Client, message: Message):
+        bot = client.bot_instance
+        formatter_module = bot.module_system.get_module("formatter")
+
+        if not formatter_module:
+            await message.reply_text("❌ Помилка: модуль-залежність `formatter` не знайдено!")
+            return
+
+        if len(message.command) > 1:
+            text_to_format = message.text.split(maxsplit=1)[1]
+            # Викликаємо функцію з іншого модуля
+            formatted_text = formatter_module.make_pretty(text_to_format)
+            await message.reply_text(formatted_text)
+        else:
+            await message.reply_text("Введіть текст для форматування.")
+
+    def register_handlers(app: Client):
+        return [
+            MessageHandler(pretty_command, filters.command("pretty", ".") & filters.me)
+        ]
+    ```
+
+Тепер, коли ви дасте команду `.load prettify`, ModuBot автоматично завантажить `formatter` (навіть завантажить його з репозиторію, якщо потрібно), а потім завантажить `prettify`. Після цього команда `.pretty test` успішно викличе функцію з модуля `formatter` і видасть результат.
